@@ -1,0 +1,226 @@
+from copy import deepcopy
+
+from .models import Customer, InventoryAlert, OperationsState, Order, Product, Shipment, Task
+
+
+INITIAL_STATE = OperationsState(
+    products=[
+        Product(
+            id="p-101",
+            name="Olive Oil Gift Set",
+            sku="OO-GIFT-500",
+            category="Pantry",
+            stock=18,
+            threshold=25,
+            unit="sets",
+            supplier="Aegean Grove Co.",
+            image="https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?auto=format&fit=crop&w=480&q=80",
+            weeklySales=[12, 10, 15, 18, 21, 19, 24],
+        ),
+        Product(
+            id="p-102",
+            name="Handwoven Cotton Towel",
+            sku="TXT-TWL-TR",
+            category="Textile",
+            stock=44,
+            threshold=20,
+            unit="pieces",
+            supplier="Denizli Loom House",
+            image="https://images.unsplash.com/photo-1583847268964-b28dc8f51f92?auto=format&fit=crop&w=480&q=80",
+            weeklySales=[7, 9, 8, 10, 12, 11, 13],
+        ),
+        Product(
+            id="p-103",
+            name="Roasted Fig Jam",
+            sku="FD-FIG-250",
+            category="Pantry",
+            stock=9,
+            threshold=30,
+            unit="jars",
+            supplier="Selcuk Kitchen",
+            image="https://images.unsplash.com/photo-1607487998981-8d44fca90343?auto=format&fit=crop&w=480&q=80",
+            weeklySales=[18, 22, 19, 24, 27, 29, 31],
+        ),
+        Product(
+            id="p-104",
+            name="Ceramic Coffee Cup",
+            sku="CER-CUP-04",
+            category="Home",
+            stock=61,
+            threshold=18,
+            unit="pieces",
+            supplier="Kinik Studio",
+            image="https://images.unsplash.com/photo-1514228742587-6b1558fcca3d?auto=format&fit=crop&w=480&q=80",
+            weeklySales=[8, 7, 11, 12, 10, 13, 12],
+        ),
+        Product(
+            id="p-105",
+            name="Dried Tomato Pack",
+            sku="FD-TOM-100",
+            category="Pantry",
+            stock=42,
+            threshold=50,
+            unit="packs",
+            supplier="Anatolia Harvest",
+            image="https://images.unsplash.com/photo-1592841200221-a6898f307baa?auto=format&fit=crop&w=480&q=80",
+            weeklySales=[21, 18, 24, 28, 25, 31, 34],
+        ),
+        Product(
+            id="p-106",
+            name="Copper Espresso Pot",
+            sku="KTC-CEZ-02",
+            category="Kitchen",
+            stock=27,
+            threshold=12,
+            unit="pieces",
+            supplier="Gaziantep Copper Works",
+            image="https://images.unsplash.com/photo-1509042239860-f550ce710b93?auto=format&fit=crop&w=480&q=80",
+            weeklySales=[3, 5, 6, 8, 6, 7, 9],
+        ),
+    ],
+    customers=[
+        Customer(id="c-1", name="Mina Yilmaz", channel="WhatsApp", phone="+90 532 000 1414"),
+        Customer(id="c-2", name="Arda Market", channel="Email", phone="+90 216 000 2020"),
+        Customer(id="c-3", name="Sofia Kaya", channel="WhatsApp", phone="+90 555 000 3030"),
+        Customer(id="c-4", name="North Pier Cafe", channel="Phone", phone="+90 212 000 4040"),
+    ],
+    orders=[
+        Order(
+            id="128",
+            customerId="c-1",
+            createdAt="2026-05-10T02:12:00+03:00",
+            status="shipped",
+            items=[{"productId": "p-101", "quantity": 1}, {"productId": "p-103", "quantity": 2}],
+            total=1870,
+            dueToday=False,
+        ),
+        Order(
+            id="129",
+            customerId="c-2",
+            createdAt="2026-05-10T03:44:00+03:00",
+            status="packing",
+            items=[{"productId": "p-105", "quantity": 12}, {"productId": "p-102", "quantity": 4}],
+            total=6420,
+            dueToday=True,
+        ),
+        Order(
+            id="130",
+            customerId="c-3",
+            createdAt="2026-05-10T06:21:00+03:00",
+            status="new",
+            items=[{"productId": "p-104", "quantity": 2}],
+            total=960,
+            dueToday=True,
+        ),
+        Order(
+            id="131",
+            customerId="c-4",
+            createdAt="2026-05-09T17:12:00+03:00",
+            status="delayed",
+            items=[{"productId": "p-103", "quantity": 8}, {"productId": "p-106", "quantity": 1}],
+            total=3910,
+            dueToday=False,
+        ),
+        Order(
+            id="132",
+            customerId="c-3",
+            createdAt="2026-05-10T07:38:00+03:00",
+            status="packing",
+            items=[{"productId": "p-101", "quantity": 3}],
+            total=2550,
+            dueToday=True,
+        ),
+    ],
+    shipments=[
+        Shipment(
+            id="s-128",
+            orderId="128",
+            carrier="MNG Cargo",
+            trackingCode="MNG128-TR",
+            eta="2026-05-11 15:00",
+            lastScan="Istanbul transfer center, 09:18",
+            city="Istanbul",
+            risk="clear",
+            notified=False,
+        ),
+        Shipment(
+            id="s-131",
+            orderId="131",
+            carrier="Yurtici Cargo",
+            trackingCode="YIC131-TR",
+            eta="2026-05-10 18:00",
+            lastScan="No scan for 22 hours after Izmir hub",
+            city="Izmir",
+            risk="delayed",
+            notified=False,
+        ),
+        Shipment(
+            id="s-132",
+            orderId="132",
+            carrier="Aras Cargo",
+            trackingCode="ARS132-TR",
+            eta="2026-05-12 12:30",
+            lastScan="Label created, waiting for pickup",
+            city="Ankara",
+            risk="watch",
+            notified=False,
+        ),
+    ],
+    inventoryAlerts=[
+        InventoryAlert(
+            productId="p-103",
+            severity="critical",
+            message="Fig jam will sell out in under 2 days at current velocity.",
+            resolved=False,
+        ),
+        InventoryAlert(
+            productId="p-105",
+            severity="warning",
+            message="Dried tomato packs are below the cooperative threshold.",
+            resolved=False,
+        ),
+        InventoryAlert(
+            productId="p-101",
+            severity="warning",
+            message="Gift set stock is below reorder point before weekend demand.",
+            resolved=False,
+        ),
+    ],
+    tasks=[
+        Task(
+            id="t-1",
+            owner="Warehouse",
+            title="Pack order 129 before noon pickup",
+            priority="high",
+            orderId="129",
+            status="open",
+        ),
+        Task(
+            id="t-2",
+            owner="Customer Desk",
+            title="Review delayed shipment for order 131",
+            priority="high",
+            orderId="131",
+            status="open",
+        ),
+        Task(
+            id="t-3",
+            owner="Purchasing",
+            title="Confirm supplier capacity for fig jam",
+            priority="medium",
+            status="open",
+        ),
+    ],
+)
+
+_state = deepcopy(INITIAL_STATE)
+
+
+def get_state() -> OperationsState:
+    return _state
+
+
+def reset_state() -> OperationsState:
+    global _state
+    _state = deepcopy(INITIAL_STATE)
+    return _state
