@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 OrderStatus = Literal["new", "packing", "shipped", "delayed", "delivered"]
@@ -14,7 +14,13 @@ ActionType = Literal[
     "create_restock_draft",
     "create_task_plan",
     "complete_task",
+    "create_supplier_order_draft",
+    "create_customer_reminder_draft",
+    "suggest_shipping_alternative",
+    "memory_insight_generated",
 ]
+InsightColor = Literal["red", "yellow", "orange", "green"]
+MemoryCategory = Literal["inventory", "customer", "supplier", "shipping", "product", "note"]
 
 
 class Product(BaseModel):
@@ -129,3 +135,53 @@ class TaskPlanResponse(BaseModel):
     state: OperationsState
     action: AgentAction
     createdTasks: list[Task]
+
+
+class MemoryRecordInput(BaseModel):
+    text: str
+    category: MemoryCategory = "note"
+    entityName: str | None = None
+    eventDate: str | None = None
+    metadata: dict[str, str | int | bool] = Field(default_factory=dict)
+
+
+class MemoryRecord(MemoryRecordInput):
+    id: str
+
+
+class MemoryStatus(BaseModel):
+    backend: Literal["chromadb", "fallback"]
+    recordCount: int
+    persistPath: str
+    collectionName: str
+    seeded: bool
+    error: str | None = None
+
+
+class MemoryIngestRequest(BaseModel):
+    records: list[MemoryRecordInput]
+
+
+class MemoryIngestResponse(BaseModel):
+    status: MemoryStatus
+    records: list[MemoryRecord]
+
+
+class ProactiveInsight(BaseModel):
+    id: str
+    color: InsightColor
+    entityName: str
+    title: str
+    summary: str
+    evidence: list[str]
+    draftAction: str
+    actionType: ActionType
+    confidence: float
+
+
+class MorningInsightsResponse(BaseModel):
+    generatedAt: str
+    llmMode: Literal["gemini", "fallback"]
+    memoryStatus: MemoryStatus
+    insights: list[ProactiveInsight]
+    actions: list[AgentAction]

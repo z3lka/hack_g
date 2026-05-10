@@ -5,10 +5,16 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import store
 from .agent import agent, create_chat_message
+from .insights import generate_morning_insights
+from .memory import ingest_memory, memory_status, seed_memory
 from .models import (
     AgentAction,
     ChatRequest,
     ChatResponse,
+    MemoryIngestRequest,
+    MemoryIngestResponse,
+    MemoryStatus,
+    MorningInsightsResponse,
     OperationsState,
     StateActionResponse,
     TaskPlanResponse,
@@ -29,6 +35,11 @@ app.add_middleware(
 )
 
 
+@app.on_event("startup")
+def startup() -> None:
+    seed_memory(force=False)
+
+
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -37,6 +48,27 @@ def health() -> dict[str, str]:
 @app.get("/api/state", response_model=OperationsState)
 def read_state() -> OperationsState:
     return store.get_state()
+
+
+@app.get("/api/memory/status", response_model=MemoryStatus)
+def read_memory_status() -> MemoryStatus:
+    return memory_status()
+
+
+@app.post("/api/memory/seed", response_model=MemoryStatus)
+def seed_memory_endpoint() -> MemoryStatus:
+    return seed_memory(force=True)
+
+
+@app.post("/api/memory/ingest", response_model=MemoryIngestResponse)
+def ingest_memory_endpoint(request: MemoryIngestRequest) -> MemoryIngestResponse:
+    records = ingest_memory(request.records)
+    return MemoryIngestResponse(status=memory_status(), records=records)
+
+
+@app.post("/api/insights/morning", response_model=MorningInsightsResponse)
+def morning_insights() -> MorningInsightsResponse:
+    return generate_morning_insights(store.get_state())
 
 
 @app.post("/api/chat", response_model=ChatResponse)
@@ -128,4 +160,5 @@ def complete_task(task_id: str) -> StateActionResponse:
 
 @app.post("/api/reset", response_model=OperationsState)
 def reset_demo() -> OperationsState:
+    seed_memory(force=True)
     return store.reset_state()

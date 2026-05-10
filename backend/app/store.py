@@ -77,12 +77,25 @@ INITIAL_STATE = OperationsState(
             image="https://images.unsplash.com/photo-1509042239860-f550ce710b93?auto=format&fit=crop&w=480&q=80",
             weeklySales=[3, 5, 6, 8, 6, 7, 9],
         ),
+        Product(
+            id="p-107",
+            name="Fresh Tomatoes",
+            sku="AGR-TOM-KG",
+            category="Produce",
+            stock=16,
+            threshold=50,
+            unit="kg",
+            supplier="Mehmet Bey",
+            image="https://images.unsplash.com/photo-1546094096-0df4bcaaa337?auto=format&fit=crop&w=480&q=80",
+            weeklySales=[34, 41, 38, 45, 52, 58, 73],
+        ),
     ],
     customers=[
         Customer(id="c-1", name="Mina Yilmaz", channel="WhatsApp", phone="+90 532 000 1414"),
         Customer(id="c-2", name="Arda Market", channel="Email", phone="+90 216 000 2020"),
         Customer(id="c-3", name="Sofia Kaya", channel="WhatsApp", phone="+90 555 000 3030"),
         Customer(id="c-4", name="North Pier Cafe", channel="Phone", phone="+90 212 000 4040"),
+        Customer(id="c-5", name="Ahmet Bey", channel="WhatsApp", phone="+90 533 000 5050"),
     ],
     orders=[
         Order(
@@ -183,6 +196,12 @@ INITIAL_STATE = OperationsState(
             productId="p-101",
             severity="warning",
             message="Gift set stock is below reorder point before weekend demand.",
+            resolved=False,
+        ),
+        InventoryAlert(
+            productId="p-107",
+            severity="critical",
+            message="Tomatoes are below Sunday safety stock and supplier memory shows repeat stockouts.",
             resolved=False,
         ),
     ],

@@ -1,4 +1,13 @@
-import type { AgentAction, ChatMessage, OperationsState, Task } from "./types";
+import type {
+  AgentAction,
+  ChatMessage,
+  MemoryRecord,
+  MemoryRecordInput,
+  MemoryStatus,
+  MorningInsightsResponse,
+  OperationsState,
+  Task,
+} from "./types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "/api";
 
@@ -18,8 +27,32 @@ export type TaskPlanResponse = StateActionResponse & {
   createdTasks: Task[];
 };
 
+export type MemoryIngestResponse = {
+  status: MemoryStatus;
+  records: MemoryRecord[];
+};
+
 export async function fetchState() {
   return request<OperationsState>("/state");
+}
+
+export async function fetchMorningInsights() {
+  return request<MorningInsightsResponse>("/insights/morning", { method: "POST" });
+}
+
+export async function fetchMemoryStatus() {
+  return request<MemoryStatus>("/memory/status");
+}
+
+export async function seedMemory() {
+  return request<MemoryStatus>("/memory/seed", { method: "POST" });
+}
+
+export async function ingestMemory(records: MemoryRecordInput[]) {
+  return request<MemoryIngestResponse>("/memory/ingest", {
+    method: "POST",
+    body: JSON.stringify({ records }),
+  });
 }
 
 export async function sendCustomerMessage(message: string) {

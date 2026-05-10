@@ -84,7 +84,11 @@ export type AgentAction = {
     | "notify_customer"
     | "create_restock_draft"
     | "create_task_plan"
-    | "complete_task";
+    | "complete_task"
+    | "create_supplier_order_draft"
+    | "create_customer_reminder_draft"
+    | "suggest_shipping_alternative"
+    | "memory_insight_generated";
   payload: Record<string, string | number | boolean>;
 };
 
@@ -95,4 +99,51 @@ export type OperationsState = {
   shipments: Shipment[];
   inventoryAlerts: InventoryAlert[];
   tasks: Task[];
+};
+
+export type MemoryCategory = "inventory" | "customer" | "supplier" | "shipping" | "product" | "note";
+
+export type MemoryRecordInput = {
+  text: string;
+  category?: MemoryCategory;
+  entityName?: string | null;
+  eventDate?: string | null;
+  metadata?: Record<string, string | number | boolean>;
+};
+
+export type MemoryRecord = Required<Pick<MemoryRecordInput, "text">> & {
+  id: string;
+  category: MemoryCategory;
+  entityName?: string | null;
+  eventDate?: string | null;
+  metadata: Record<string, string | number | boolean>;
+};
+
+export type MemoryStatus = {
+  backend: "chromadb" | "fallback";
+  recordCount: number;
+  persistPath: string;
+  collectionName: string;
+  seeded: boolean;
+  error?: string | null;
+};
+
+export type ProactiveInsight = {
+  id: string;
+  color: "red" | "yellow" | "orange" | "green";
+  entityName: string;
+  title: string;
+  summary: string;
+  evidence: string[];
+  draftAction: string;
+  actionType: AgentAction["type"];
+  confidence: number;
+};
+
+export type MorningInsightsResponse = {
+  generatedAt: string;
+  llmMode: "gemini" | "fallback";
+  memoryStatus: MemoryStatus;
+  insights: ProactiveInsight[];
+  actions: AgentAction[];
 };

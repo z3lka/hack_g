@@ -28,8 +28,10 @@ import {
 import {
   completeTaskRequest,
   createRestockDraft,
+  fetchMorningInsights,
   fetchState,
   generateTaskPlan,
+  ingestMemory,
   notifyShipment,
   resetDemoState,
   sendCustomerMessage,
@@ -38,9 +40,11 @@ import type {
   AgentAction,
   ChatMessage,
   InventoryAlert,
+  MemoryStatus,
   OperationsState,
   Order,
   Product,
+  ProactiveInsight,
 } from "./types";
 
 const starterMessages = [
@@ -78,9 +82,16 @@ function App() {
   const [chatInput, setChatInput] = useState(starterMessages[0]);
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [actions, setActions] = useState<AgentAction[]>([]);
+  const [insights, setInsights] = useState<ProactiveInsight[]>([]);
+  const [memoryStatus, setMemoryStatus] = useState<MemoryStatus | null>(null);
+  const [llmMode, setLlmMode] = useState<"gemini" | "fallback">("fallback");
+  const [insightsGeneratedAt, setInsightsGeneratedAt] = useState("");
   const [apiError, setApiError] = useState("");
   const [isMutating, setIsMutating] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState("Today");
+  const [memoryInput, setMemoryInput] = useState(
+    "Ahmet Bey prefers a WhatsApp reminder before 11:00 when his Monday order is missing.",
+  );
 
   useEffect(() => {
     void loadState();
@@ -119,10 +130,20 @@ function App() {
   async function loadState() {
     try {
       setApiError("");
-      setState(await fetchState());
+      const nextState = await fetchState();
+      setState(nextState);
+      await refreshMorningInsights();
     } catch (error) {
       setApiError(getErrorMessage(error));
     }
+  }
+
+  async function refreshMorningInsights() {
+    const response = await fetchMorningInsights();
+    setInsights(response.insights);
+    setMemoryStatus(response.memoryStatus);
+    setLlmMode(response.llmMode);
+    setInsightsGeneratedAt(response.generatedAt);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -138,6 +159,35 @@ function App() {
       prependActions(response.actions);
       setState(response.state);
       setChatInput("");
+    });
+  }
+
+  async function handleMemoryIngest(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!memoryInput.trim()) {
+      return;
+    }
+
+    await runMutation(async () => {
+      const response = await ingestMemory([
+        {
+          text: memoryInput,
+          category: "note",
+          eventDate: "2026-05-10",
+        },
+      ]);
+      setMemoryStatus(response.status);
+      await refreshMorningInsights();
+      prependActions([
+        {
+          id: crypto.randomUUID(),
+          label: "New memory note saved to ChromaDB",
+          type: "memory_insight_generated",
+          payload: { records: response.records.length },
+        },
+      ]);
+      setMemoryInput("");
     });
   }
 
@@ -176,6 +226,7 @@ function App() {
   async function resetDemo() {
     await runMutation(async () => {
       setState(await resetDemoState());
+      await refreshMorningInsights();
       setActions([]);
       setMessages(initialMessages);
     });
@@ -195,6 +246,20 @@ function App() {
 
   function prependActions(nextActions: AgentAction[]) {
     setActions((current) => [...nextActions, ...current].slice(0, 8));
+  }
+
+  function handleInsightAction(insight: ProactiveInsight) {
+    prependActions([
+      {
+        id: crypto.randomUUID(),
+        label: insight.draftAction,
+        type: insight.actionType,
+        payload: {
+          insightId: insight.id,
+          entityName: insight.entityName,
+        },
+      },
+    ]);
   }
 
   if (!state) {
@@ -312,6 +377,35 @@ function App() {
             detail="warehouse and support"
             tone="neutral"
           />
+        </section>
+
+        <section className="memory-section" aria-label="Business memory insights">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Business Memory</p>
+              <h2>Morning proactive insights</h2>
+            </div>
+            <MemoryStatusBadge
+              status={memoryStatus}
+              llmMode={llmMode}
+              generatedAt={insightsGeneratedAt}
+            />
+          </div>
+          <div className="insight-grid">
+            {insights.map((insight) => (
+              <InsightCard
+                insight={insight}
+                key={insight.id}
+                onAction={() => handleInsightAction(insight)}
+              />
+            ))}
+            {!insights.length ? (
+              <div className="empty-state memory-empty">
+                <Sparkles size={24} />
+                <span>Memory insights will appear after FastAPI generates the morning briefing.</span>
+              </div>
+            ) : null}
+          </div>
         </section>
 
         <div className="content-grid">
@@ -512,6 +606,27 @@ function App() {
               </form>
             </section>
 
+            <section className="panel memory-ingest-panel">
+              <div className="panel-heading">
+                <div>
+                  <p className="eyebrow">Memory Input</p>
+                  <h2>Teach the assistant</h2>
+                </div>
+                <Sparkles size={20} />
+              </div>
+              <form className="memory-ingest-form" onSubmit={handleMemoryIngest}>
+                <textarea
+                  value={memoryInput}
+                  onChange={(event) => setMemoryInput(event.target.value)}
+                  placeholder="Business note, customer rhythm, supplier issue"
+                />
+                <button type="submit" disabled={isMutating}>
+                  <ArrowUpRight size={16} />
+                  Save to memory
+                </button>
+              </form>
+            </section>
+
             <section className="panel action-feed">
               <div className="panel-heading">
                 <div>
@@ -540,6 +655,59 @@ function App() {
         </div>
       </section>
     </main>
+  );
+}
+
+function MemoryStatusBadge({
+  status,
+  llmMode,
+  generatedAt,
+}: {
+  status: MemoryStatus | null;
+  llmMode: "gemini" | "fallback";
+  generatedAt: string;
+}) {
+  return (
+    <div className="memory-status">
+      <span>{status?.backend === "chromadb" ? "ChromaDB" : "Fallback memory"}</span>
+      <strong>{status?.recordCount ?? 0} records</strong>
+      <small>
+        {llmMode === "gemini" ? "Gemini live" : "Deterministic fallback"}
+        {generatedAt ? ` - ${formatGeneratedAt(generatedAt)}` : ""}
+      </small>
+    </div>
+  );
+}
+
+function InsightCard({
+  insight,
+  onAction,
+}: {
+  insight: ProactiveInsight;
+  onAction: () => void;
+}) {
+  return (
+    <article className={`insight-card ${insight.color}`}>
+      <div className="insight-card-header">
+        <span className="insight-dot" />
+        <div>
+          <p className="eyebrow">{insight.entityName}</p>
+          <h3>{insight.title}</h3>
+        </div>
+        <strong>{Math.round(insight.confidence * 100)}%</strong>
+      </div>
+      <p className="insight-summary">{insight.summary}</p>
+      <div className="evidence-list">
+        {insight.evidence.slice(0, 2).map((item) => (
+          <span key={item}>{item}</span>
+        ))}
+      </div>
+      <button type="button" onClick={onAction}>
+        <ArrowUpRight size={16} />
+        Use draft
+      </button>
+      <small>{insight.draftAction}</small>
+    </article>
   );
 }
 
@@ -642,6 +810,19 @@ function formatCurrency(amount: number) {
     currency: "TRY",
     maximumFractionDigits: 0,
   }).format(amount);
+}
+
+function formatGeneratedAt(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("en", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
 }
 
 function summarizeOrderItems(order: Order, state: OperationsState) {
