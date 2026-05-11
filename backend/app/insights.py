@@ -3,7 +3,13 @@ from uuid import uuid4
 
 from . import memory
 from .gemini_client import gemini_client
-from .models import AgentAction, MemoryRecord, MorningInsightsResponse, OperationsState, ProactiveInsight
+from .models import (
+    AgentAction,
+    MemoryRecord,
+    MorningInsightsResponse,
+    OperationsState,
+    ProactiveInsight,
+)
 
 
 def generate_morning_insights(state: OperationsState) -> MorningInsightsResponse:
@@ -36,41 +42,71 @@ def generate_morning_insights(state: OperationsState) -> MorningInsightsResponse
 
 
 def _build_prompt(state: OperationsState, records: list[MemoryRecord]) -> str:
+    today = datetime.now().strftime("%A, %B %d %Y")
+
     product_snapshot = "\n".join(
-        f"- {product.name}: stock={product.stock} {product.unit}, threshold={product.threshold}, supplier={product.supplier}"
-        for product in state.products
+        f"- {p.name}: stock={p.stock} {p.unit}, threshold={p.threshold}, "
+        f"avg_daily_sales={round(sum(p.weeklySales)/len(p.weeklySales), 1)} {p.unit}/day, "
+        f"days_left={round(p.stock / (sum(p.weeklySales)/len(p.weeklySales)), 1) if sum(p.weeklySales) > 0 else 'N/A'}, "
+        f"supplier={p.supplier}"
+        for p in state.products
     )
-    memory_context = "\n".join(f"- {record.text}" for record in records)
+
+    order_snapshot = "\n".join(
+        f"- Order {o.id}: status={o.status}, dueToday={o.dueToday}, total={o.total} TRY"
+        for o in state.orders
+    )
+
+    shipment_snapshot = "\n".join(
+        f"- Order {s.orderId}: carrier={s.carrier}, risk={s.risk}, eta={s.eta}, lastScan={s.lastScan}"
+        for s in state.shipments
+    )
+
+    memory_context = "\n".join(f"- {r.text}" for r in records)
 
     return f"""
-You are an AI operations memory assistant for a small business.
-Use only the current operations snapshot and retrieved memory records.
-Return strict JSON only with this shape:
+You are an AI operations assistant for a small Turkish business (KOBİ).
+Today is {today}.
+
+Analyze the current operations snapshot and retrieved memory records below.
+Identify the most important proactive insights the business owner should act on TODAY.
+Focus on: stock risks, unusual customer patterns, shipping issues, restock opportunities.
+
+Return ONLY strict JSON with this exact shape, no markdown, no explanation:
 {{
   "insights": [
     {{
       "color": "red|yellow|orange|green",
-      "entityName": "string",
-      "title": "short dashboard title",
-      "summary": "one sentence proactive insight",
-      "evidence": ["memory evidence sentence", "memory evidence sentence"],
-      "draftAction": "ready-to-send operational draft",
+      "entityName": "string — product name, customer name, or carrier name",
+      "title": "short dashboard title (max 6 words)",
+      "summary": "one clear sentence explaining why this matters today",
+      "evidence": ["memory record that supports this", "another supporting record"],
+      "draftAction": "ready-to-send message or operational instruction (Turkish or English)",
       "actionType": "create_supplier_order_draft|create_customer_reminder_draft|suggest_shipping_alternative|memory_insight_generated",
       "confidence": 0.0
     }}
   ]
 }}
 
-Required insights:
-1. Red TOMATOES: CRITICAL. Mention last 3 weeks, tomatoes running out every Friday, tomorrow being Friday, current stock 8 kg, average daily sales 15 kg, and Mehmet Bey.
-2. Yellow CUSTOMER FOLLOW-UP: Ahmet Bey. Mention orders every Monday for the last 6 weeks, no order this Monday, today Wednesday, and a reminder draft.
-3. Orange SUPPLIER WARNING: Shipping Company X. Mention average 2-day delay in last 3 orders and Company Y as an active regional alternative.
-4. Green Olive Oil sufficient stock for 3 weeks.
+Rules:
+•⁠  ⁠color red = act today, orange = act this week, yellow = watch, green = all good
+•⁠  ⁠Generate 3 to 5 insights maximum
+•⁠  ⁠Only include insights supported by memory evidence or clear data anomalies
+•⁠  ⁠Do NOT invent facts not present in the snapshot or memory
+•⁠  ⁠confidence is a float between 0.0 and 1.0
 
 Current operations snapshot:
+
+PRODUCTS:
 {product_snapshot}
 
-Retrieved memory:
+ORDERS:
+{order_snapshot}
+
+SHIPMENTS:
+{shipment_snapshot}
+
+Retrieved memory records:
 {memory_context}
 """.strip()
 
@@ -115,11 +151,11 @@ def _fallback_insights(records: list[MemoryRecord]) -> list[ProactiveInsight]:
         ProactiveInsight(
             id="fallback-tomatoes",
             color="red",
-            entityName="TOMATOES",
-            title="TOMATOES: CRITICAL",
-            summary="According to the data from the last 3 weeks, your tomato stock runs out every Friday. Tomorrow is Friday. Current stock is 8 kg, while average daily sales are 15 kg. I recommend placing an order with Mehmet Bey.",
+            entityName="Domates",
+            title="Domates: KRİTİK STOK",
+            summary="Son 3 haftanın verisine göre domates her Cuma tükeniyor. Yarın Cuma, mevcut stok 8 kg, günlük ortalama satış 15 kg. Mehmet Bey'e sipariş verilmesi önerilir.",
             evidence=_evidence(records, "Tomatoes"),
-            draftAction="Subject: Urgent Tomato Order\n\nDear Mehmet Bey,\n\nOur current stock has dropped to a critical level. Based on our previous orders, we would like to place an order for 50 kg of tomatoes this week. Could you please let us know your availability?",
+            draftAction="Konu: Acil Domates Siparişi\n\nSayın Mehmet Bey,\n\nMevcut stoğumuz kritik seviyeye düştü. Geçmiş siparişlerimize göre bu hafta 50 kg domates siparişi vermek istiyoruz. Müsaitlik durumunuzu paylaşır mısınız?",
             actionType="create_supplier_order_draft",
             confidence=0.93,
         ),
@@ -127,32 +163,33 @@ def _fallback_insights(records: list[MemoryRecord]) -> list[ProactiveInsight]:
             id="fallback-ahmet",
             color="yellow",
             entityName="Ahmet Bey",
-            title="CUSTOMER FOLLOW-UP: Ahmet Bey",
-            summary="Ahmet Bey has placed an order every Monday for the last 6 weeks. He did not place an order this Monday, and today is Wednesday. I prepared a reminder message.",
+            title="Müşteri Takip: Ahmet Bey",
+            summary="Ahmet Bey son 6 haftadır her Pazartesi sipariş verdi. Bu Pazartesi sipariş vermedi, bugün Çarşamba. Hatırlatma mesajı hazırlandı.",
             evidence=_evidence(records, "Ahmet Bey"),
-            draftAction="Hello Ahmet Bey, can we help you with your order this week? Would you like us to prepare your weekly basket?",
+            draftAction="Merhaba Ahmet Bey, bu hafta siparişiniz için yardımcı olabilir miyiz? Haftalık sepetinizi hazırlayalım mı?",
             actionType="create_customer_reminder_draft",
             confidence=0.88,
         ),
         ProactiveInsight(
             id="fallback-shipping-x",
             color="orange",
-            entityName="Shipping Company X",
-            title="SUPPLIER WARNING: Shipping Company X",
-            summary="This company was delayed by an average of 2 days in your last 3 orders. As an alternative, Company Y is active in your region.",
-            evidence=_evidence(records, "Shipping Company X") + _evidence(records, "Alternative Carrier Y"),
-            draftAction="Alternative suggestion: Use Company Y for regional deliveries this week. It is active in your region and has a better recent delivery record.",
+            entityName="Kargo Firması X",
+            title="Tedarikçi Uyarı: Kargo X",
+            summary="Bu firma son 3 siparişinizde ortalama 2 gün gecikti. Alternatif olarak Firma Y bölgenizde aktif.",
+            evidence=_evidence(records, "Shipping Company X")
+            + _evidence(records, "Alternative Carrier Y"),
+            draftAction="Alternatif öneri: Bu hafta bölgesel teslimatlar için Firma Y kullanılsın. Son 6 siparişte zamanında teslim gerçekleştirdi.",
             actionType="suggest_shipping_alternative",
             confidence=0.84,
         ),
         ProactiveInsight(
             id="fallback-olive-oil",
             color="green",
-            entityName="Olive Oil",
-            title="Olive Oil: stock is healthy",
-            summary="Olive oil demand is stable and current stock should cover about three weeks.",
+            entityName="Zeytinyağı",
+            title="Zeytinyağı: Stok Yeterli",
+            summary="Zeytinyağı talebi stabil, mevcut stok yaklaşık 3 hafta yeterli.",
             evidence=_evidence(records, "Olive Oil"),
-            draftAction="No purchase action needed. Recheck olive oil coverage next Monday.",
+            draftAction="Şu an aksiyon gerekmiyor. Zeytinyağı stokunu önümüzdeki Pazartesi tekrar kontrol et.",
             actionType="memory_insight_generated",
             confidence=0.91,
         ),
@@ -160,5 +197,7 @@ def _fallback_insights(records: list[MemoryRecord]) -> list[ProactiveInsight]:
 
 
 def _evidence(records: list[MemoryRecord], entity_name: str) -> list[str]:
-    matching = [record.text for record in records if entity_name.lower() in record.text.lower()]
-    return matching[:2] or [f"No direct memory found for {entity_name}; fallback demo rule applied."]
+    matching = [r.text for r in records if entity_name.lower() in r.text.lower()]
+    return matching[:2] or [
+        f"No direct memory found for {entity_name}; fallback rule applied."
+    ]

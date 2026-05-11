@@ -21,13 +21,7 @@ import {
   Users,
   Warehouse,
 } from "lucide-react";
-import {
-  FormEvent,
-  ReactNode,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import {
   completeTaskRequest,
   createRestockDraft,
@@ -113,10 +107,14 @@ function App() {
   const currentState = state ?? emptyState;
   const riskyShipments = useMemo(
     () =>
-      currentState.shipments.filter((shipment) => shipment.risk !== "clear" && !shipment.notified),
+      currentState.shipments.filter(
+        (shipment) => shipment.risk !== "clear" && !shipment.notified,
+      ),
     [currentState.shipments],
   );
-  const activeAlerts = currentState.inventoryAlerts.filter((alert) => !alert.resolved);
+  const activeAlerts = currentState.inventoryAlerts.filter(
+    (alert) => !alert.resolved,
+  );
   const dueToday = currentState.orders.filter(
     (order) => order.dueToday && order.status !== "delivered",
   );
@@ -133,8 +131,14 @@ function App() {
     }
 
     if (selectedFilter === "Risk") {
-      const shipment = currentState.shipments.find((item) => item.orderId === order.id);
-      return order.status === "delayed" || shipment?.risk === "watch" || shipment?.risk === "delayed";
+      const shipment = currentState.shipments.find(
+        (item) => item.orderId === order.id,
+      );
+      return (
+        order.status === "delayed" ||
+        shipment?.risk === "watch" ||
+        shipment?.risk === "delayed"
+      );
     }
 
     return true;
@@ -168,7 +172,11 @@ function App() {
 
     await runMutation(async () => {
       const response = await sendCustomerMessage(chatInput);
-      setMessages((current) => [...current, response.customerMessage, response.agentMessage]);
+      setMessages((current) => [
+        ...current,
+        response.customerMessage,
+        response.agentMessage,
+      ]);
       prependActions(response.actions);
       setState(response.state);
       setChatInput("");
@@ -308,7 +316,9 @@ function App() {
 
   return (
     <main className="app-shell">
-      <aside className="sidebar" aria-label="Main navigation">
+      <aside
+        className="sidebar"
+        aria-label="Main navigation">
         <div className="brand-lockup">
           <div className="brand-mark">
             <Sparkles size={21} />
@@ -323,36 +333,31 @@ function App() {
           <button
             className={activePage === "dashboard" ? "active" : ""}
             type="button"
-            onClick={() => setActivePage("dashboard")}
-          >
+            onClick={() => setActivePage("dashboard")}>
             <Boxes size={18} /> Dashboard
           </button>
           <button
             className={activePage === "stock" ? "active" : ""}
             type="button"
-            onClick={() => setActivePage("stock")}
-          >
+            onClick={() => setActivePage("stock")}>
             <Warehouse size={18} /> Stock
           </button>
           <button
             className={activePage === "customers" ? "active" : ""}
             type="button"
-            onClick={() => setActivePage("customers")}
-          >
+            onClick={() => setActivePage("customers")}>
             <Users size={18} /> Customers
           </button>
           <button
             className={activePage === "orders" ? "active" : ""}
             type="button"
-            onClick={() => setActivePage("orders")}
-          >
+            onClick={() => setActivePage("orders")}>
             <ShoppingBag size={18} /> Orders
           </button>
           <button
             className={activePage === "memory" ? "active" : ""}
             type="button"
-            onClick={() => setActivePage("memory")}
-          >
+            onClick={() => setActivePage("memory")}>
             <History size={18} /> Memory
           </button>
         </nav>
@@ -367,15 +372,16 @@ function App() {
             className="ghost-button"
             type="button"
             onClick={generateDailyPlan}
-            disabled={isMutating}
-          >
+            disabled={isMutating}>
             <ClipboardList size={16} />
             Generate tasks
           </button>
         </div>
       </aside>
 
-      <section className="workspace" id="dashboard">
+      <section
+        className="workspace"
+        id="dashboard">
         <header className="topbar">
           <div>
             <p className="eyebrow">Wednesday, May 10</p>
@@ -386,15 +392,17 @@ function App() {
               <Search size={17} />
               <span>Order, product, customer</span>
             </div>
-            <button className="icon-button" type="button" aria-label="Notifications">
+            <button
+              className="icon-button"
+              type="button"
+              aria-label="Notifications">
               <Bell size={18} />
             </button>
             <button
               className="secondary-button"
               type="button"
               onClick={resetDemo}
-              disabled={isMutating}
-            >
+              disabled={isMutating}>
               <RefreshCw size={16} />
               Reset demo
             </button>
@@ -404,59 +412,65 @@ function App() {
 
         {activePage === "dashboard" ? (
           <>
-        <section className="metric-grid" aria-label="Operations metrics">
-          <MetricCard
-            icon={<ShoppingBag size={22} />}
-            label="Total active orders"
-            value="24"
-            detail={`${dueToday.length} need action today`}
-            tone="green"
-          />
-          <MetricCard
-            icon={<AlertTriangle size={22} />}
-            label="Critical stock alerts"
-            value="3"
-            detail="products need review"
-            tone="orange"
-          />
-          <MetricCard
-            icon={<Users size={22} />}
-            label="Customers to follow up with"
-            value="2"
-            detail="missed usual ordering rhythm"
-            tone="blue"
-          />
-        </section>
-
-        <section className="memory-section" aria-label="Business memory insights">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">Business Memory</p>
-              <h2>Morning proactive insights</h2>
-            </div>
-            <MemoryStatusBadge
-              status={memoryStatus}
-              llmMode={llmMode}
-              generatedAt={insightsGeneratedAt}
-            />
-          </div>
-          <div className="insight-grid">
-            {insights.map((insight) => (
-              <InsightCard
-                insight={insight}
-                key={insight.id}
-                onAction={() => handleInsightAction(insight)}
+            <section
+              className="metric-grid"
+              aria-label="Operations metrics">
+              <MetricCard
+                icon={<ShoppingBag size={22} />}
+                label="Total active orders"
+                value="24"
+                detail={`${dueToday.length} need action today`}
+                tone="green"
               />
-            ))}
-            {!insights.length ? (
-              <div className="empty-state memory-empty">
-                <Sparkles size={24} />
-                <span>Memory insights will appear after FastAPI generates the morning briefing.</span>
-              </div>
-            ) : null}
-          </div>
-        </section>
+              <MetricCard
+                icon={<AlertTriangle size={22} />}
+                label="Critical stock alerts"
+                value="3"
+                detail="products need review"
+                tone="orange"
+              />
+              <MetricCard
+                icon={<Users size={22} />}
+                label="Customers to follow up with"
+                value="2"
+                detail="missed usual ordering rhythm"
+                tone="blue"
+              />
+            </section>
 
+            <section
+              className="memory-section"
+              aria-label="Business memory insights">
+              <div className="section-heading">
+                <div>
+                  <p className="eyebrow">Business Memory</p>
+                  <h2>Morning proactive insights</h2>
+                </div>
+                <MemoryStatusBadge
+                  status={memoryStatus}
+                  llmMode={llmMode}
+                  generatedAt={insightsGeneratedAt}
+                />
+              </div>
+              <div className="insight-grid">
+                {insights.map((insight) => (
+                  <InsightCard
+                    insight={insight}
+                    key={insight.id}
+                    onAction={() => handleInsightAction(insight)}
+                  />
+                ))}
+                {!insights.length ? (
+                  <div className="empty-state memory-empty">
+                    <Sparkles size={24} />
+                    <span>
+                      Memory insights will appear after FastAPI generates the
+                      morning briefing.
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+            </section>
           </>
         ) : null}
 
@@ -464,268 +478,312 @@ function App() {
           <StockPage products={state.products} />
         ) : null}
 
-        {activePage === "customers" ? (
-          <CustomersPage />
-        ) : null}
+        {activePage === "customers" ? <CustomersPage /> : null}
 
-        {activePage === "orders" ? (
-          <OrdersPage state={state} />
-        ) : null}
+        {activePage === "orders" ? <OrdersPage state={state} /> : null}
 
         {activePage === "memory" ? (
-          <MemoryPage insights={insights} memoryStatus={memoryStatus} />
+          <MemoryPage
+            insights={insights}
+            memoryStatus={memoryStatus}
+          />
         ) : null}
 
         {activePage === "dashboard" ? (
           <div className="content-grid">
-          <section className="main-column">
-            <div className="section-heading">
-              <div>
-                <p className="eyebrow">Live workspace</p>
-                <h2>Today&apos;s control board</h2>
-              </div>
-              <SegmentedControl
-                value={selectedFilter}
-                options={["Today", "Risk", "All"]}
-                onChange={setSelectedFilter}
-              />
-            </div>
-
-            <section className="order-board" id="orders">
-              {visibleOrders.map((order) => {
-                const customer = state.customers.find((item) => item.id === order.customerId);
-                const shipment = state.shipments.find((item) => item.orderId === order.id);
-
-                return (
-                  <article className="order-card" key={order.id}>
-                    <div className="order-card-header">
-                      <div>
-                        <span className="order-id">#{order.id}</span>
-                        <h3>{customer?.name}</h3>
-                      </div>
-                      <StatusPill status={shipment?.risk ?? order.status} />
-                    </div>
-                    <p>{summarizeOrderItems(order, state)}</p>
-                    <div className="order-meta">
-                      <span>{customer?.channel}</span>
-                      <span>{formatCurrency(order.total)}</span>
-                      <span>{order.dueToday ? "Due today" : "Scheduled"}</span>
-                    </div>
-                    {shipment ? (
-                      <div className="shipment-strip">
-                        <Truck size={16} />
-                        <span>{shipment.carrier}</span>
-                        <strong>{shipment.eta}</strong>
-                      </div>
-                    ) : (
-                      <div className="shipment-strip muted">
-                        <Warehouse size={16} />
-                        <span>Awaiting warehouse handoff</span>
-                      </div>
-                    )}
-                  </article>
-                );
-              })}
-            </section>
-
-            <section className="split-grid">
-              <div className="panel" id="inventory">
-                <div className="panel-heading">
-                  <div>
-                    <p className="eyebrow">Inventory</p>
-                    <h2>Reorder risks</h2>
-                  </div>
-                  <Boxes size={20} />
+            <section className="main-column">
+              <div className="section-heading">
+                <div>
+                  <p className="eyebrow">Live workspace</p>
+                  <h2>Today&apos;s control board</h2>
                 </div>
-                <div className="inventory-list">
-                  {activeAlerts.map((alert) => {
-                    const product = state.products.find((item) => item.id === alert.productId);
-
-                    if (!product) {
-                      return null;
-                    }
-
-                    return (
-                      <InventoryRow
-                        key={alert.productId}
-                        alert={alert}
-                        product={product}
-                        onResolve={() => resolveInventoryAlert(alert)}
-                        disabled={isMutating}
-                      />
-                    );
-                  })}
-                  {!activeAlerts.length ? (
-                    <div className="empty-state">
-                      <CheckCircle2 size={24} />
-                      <span>All reorder alerts have drafts.</span>
-                    </div>
-                  ) : null}
-                </div>
+                <SegmentedControl
+                  value={selectedFilter}
+                  options={["Today", "Risk", "All"]}
+                  onChange={setSelectedFilter}
+                />
               </div>
 
-              <div className="panel" id="shipments">
+              <section
+                className="order-board"
+                id="orders">
+                {visibleOrders.map((order) => {
+                  const customer = state.customers.find(
+                    (item) => item.id === order.customerId,
+                  );
+                  const shipment = state.shipments.find(
+                    (item) => item.orderId === order.id,
+                  );
+
+                  return (
+                    <article
+                      className="order-card"
+                      key={order.id}>
+                      <div className="order-card-header">
+                        <div>
+                          <span className="order-id">#{order.id}</span>
+                          <h3>{customer?.name}</h3>
+                        </div>
+                        <StatusPill status={shipment?.risk ?? order.status} />
+                      </div>
+                      <p>{summarizeOrderItems(order, state)}</p>
+                      <div className="order-meta">
+                        <span>{customer?.channel}</span>
+                        <span>{formatCurrency(order.total)}</span>
+                        <span>
+                          {order.dueToday ? "Due today" : "Scheduled"}
+                        </span>
+                      </div>
+                      {shipment ? (
+                        <div className="shipment-strip">
+                          <Truck size={16} />
+                          <span>{shipment.carrier}</span>
+                          <strong>{shipment.eta}</strong>
+                        </div>
+                      ) : (
+                        <div className="shipment-strip muted">
+                          <Warehouse size={16} />
+                          <span>Awaiting warehouse handoff</span>
+                        </div>
+                      )}
+                    </article>
+                  );
+                })}
+              </section>
+
+              <section className="split-grid">
+                <div
+                  className="panel"
+                  id="inventory">
+                  <div className="panel-heading">
+                    <div>
+                      <p className="eyebrow">Inventory</p>
+                      <h2>Reorder risks</h2>
+                    </div>
+                    <Boxes size={20} />
+                  </div>
+                  <div className="inventory-list">
+                    {activeAlerts.map((alert) => {
+                      const product = state.products.find(
+                        (item) => item.id === alert.productId,
+                      );
+
+                      if (!product) {
+                        return null;
+                      }
+
+                      return (
+                        <InventoryRow
+                          key={alert.productId}
+                          alert={alert}
+                          product={product}
+                          onResolve={() => resolveInventoryAlert(alert)}
+                          disabled={isMutating}
+                        />
+                      );
+                    })}
+                    {!activeAlerts.length ? (
+                      <div className="empty-state">
+                        <CheckCircle2 size={24} />
+                        <span>All reorder alerts have drafts.</span>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div
+                  className="panel"
+                  id="shipments">
+                  <div className="panel-heading">
+                    <div>
+                      <p className="eyebrow">Shipping</p>
+                      <h2>Exceptions</h2>
+                    </div>
+                    <Truck size={20} />
+                  </div>
+                  <div className="exception-list">
+                    {riskyShipments.map((shipment) => (
+                      <article
+                        className="exception-card"
+                        key={shipment.id}>
+                        <div>
+                          <span className="order-id">#{shipment.orderId}</span>
+                          <h3>{shipment.carrier}</h3>
+                          <p>{shipment.lastScan}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => markShipmentNotified(shipment.orderId)}
+                          disabled={isMutating}>
+                          <UserRoundCheck size={16} />
+                          Notify
+                        </button>
+                      </article>
+                    ))}
+                    {!riskyShipments.length ? (
+                      <div className="empty-state">
+                        <CheckCircle2 size={24} />
+                        <span>No unnotified shipping risks.</span>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </section>
+
+              <section className="panel">
                 <div className="panel-heading">
                   <div>
-                    <p className="eyebrow">Shipping</p>
-                    <h2>Exceptions</h2>
+                    <p className="eyebrow">Workflow</p>
+                    <h2>Team queue</h2>
                   </div>
-                  <Truck size={20} />
+                  <ClipboardList size={20} />
                 </div>
-                <div className="exception-list">
-                  {riskyShipments.map((shipment) => (
-                    <article className="exception-card" key={shipment.id}>
-                      <div>
-                        <span className="order-id">#{shipment.orderId}</span>
-                        <h3>{shipment.carrier}</h3>
-                        <p>{shipment.lastScan}</p>
-                      </div>
+                <div className="task-list">
+                  {openTasks.slice(0, 6).map((task) => (
+                    <article
+                      className="task-row"
+                      key={task.id}>
                       <button
+                        className="check-button"
                         type="button"
-                        onClick={() => markShipmentNotified(shipment.orderId)}
-                        disabled={isMutating}
-                      >
-                        <UserRoundCheck size={16} />
-                        Notify
+                        aria-label={`Complete ${task.title}`}
+                        onClick={() => completeTask(task.id)}
+                        disabled={isMutating}>
+                        <CheckCircle2 size={18} />
                       </button>
+                      <div>
+                        <strong>{task.title}</strong>
+                        <span>
+                          {task.owner}{" "}
+                          {task.orderId ? `- order ${task.orderId}` : ""}
+                        </span>
+                      </div>
+                      <PriorityTag priority={task.priority} />
                     </article>
                   ))}
-                  {!riskyShipments.length ? (
-                    <div className="empty-state">
-                      <CheckCircle2 size={24} />
-                      <span>No unnotified shipping risks.</span>
-                    </div>
-                  ) : null}
                 </div>
-              </div>
+              </section>
             </section>
 
-            <section className="panel">
-              <div className="panel-heading">
-                <div>
-                  <p className="eyebrow">Workflow</p>
-                  <h2>Team queue</h2>
+            <aside
+              className="assistant-column"
+              id="assistant">
+              <section className="assistant-panel">
+                <div className="assistant-header">
+                  <div className="assistant-avatar">
+                    <Bot size={23} />
+                  </div>
+                  <div>
+                    <p className="eyebrow">AI Desk</p>
+                    <h2>Customer automation</h2>
+                  </div>
                 </div>
-                <ClipboardList size={20} />
-              </div>
-              <div className="task-list">
-                {openTasks.slice(0, 6).map((task) => (
-                  <article className="task-row" key={task.id}>
+
+                <div className="starter-row">
+                  {starterMessages.map((message) => (
                     <button
-                      className="check-button"
                       type="button"
-                      aria-label={`Complete ${task.title}`}
-                      onClick={() => completeTask(task.id)}
-                      disabled={isMutating}
-                    >
-                      <CheckCircle2 size={18} />
+                      key={message}
+                      onClick={() => setChatInput(message)}>
+                      {message}
                     </button>
-                    <div>
-                      <strong>{task.title}</strong>
+                  ))}
+                </div>
+
+                <div
+                  className="chat-log"
+                  aria-live="polite">
+                  {messages.map((message) => (
+                    <div
+                      className={`chat-bubble ${message.role}`}
+                      key={message.id}>
                       <span>
-                        {task.owner} {task.orderId ? `- order ${task.orderId}` : ""}
+                        {message.role === "agent" ? "AI agent" : "Customer"}
                       </span>
+                      <p>{message.text}</p>
+                      <time>{message.timestamp}</time>
                     </div>
-                    <PriorityTag priority={task.priority} />
-                  </article>
-                ))}
-              </div>
-            </section>
-          </section>
-
-          <aside className="assistant-column" id="assistant">
-            <section className="assistant-panel">
-              <div className="assistant-header">
-                <div className="assistant-avatar">
-                  <Bot size={23} />
+                  ))}
                 </div>
-                <div>
-                  <p className="eyebrow">AI Desk</p>
-                  <h2>Customer automation</h2>
-                </div>
-              </div>
 
-              <div className="starter-row">
-                {starterMessages.map((message) => (
-                  <button type="button" key={message} onClick={() => setChatInput(message)}>
-                    {message}
+                <form
+                  className="chat-form"
+                  onSubmit={handleSubmit}>
+                  <input
+                    value={chatInput}
+                    onChange={(event) => setChatInput(event.target.value)}
+                    placeholder="Customer message"
+                  />
+                  <button
+                    type="submit"
+                    aria-label="Send message"
+                    disabled={isMutating}>
+                    <Send size={18} />
                   </button>
-                ))}
-              </div>
+                </form>
+              </section>
 
-              <div className="chat-log" aria-live="polite">
-                {messages.map((message) => (
-                  <div className={`chat-bubble ${message.role}`} key={message.id}>
-                    <span>{message.role === "agent" ? "AI agent" : "Customer"}</span>
-                    <p>{message.text}</p>
-                    <time>{message.timestamp}</time>
+              <section className="panel memory-ingest-panel">
+                <div className="panel-heading">
+                  <div>
+                    <p className="eyebrow">Memory Input</p>
+                    <h2>Teach the assistant</h2>
                   </div>
-                ))}
-              </div>
-
-              <form className="chat-form" onSubmit={handleSubmit}>
-                <input
-                  value={chatInput}
-                  onChange={(event) => setChatInput(event.target.value)}
-                  placeholder="Customer message"
-                />
-                <button type="submit" aria-label="Send message" disabled={isMutating}>
-                  <Send size={18} />
-                </button>
-              </form>
-            </section>
-
-            <section className="panel memory-ingest-panel">
-              <div className="panel-heading">
-                <div>
-                  <p className="eyebrow">Memory Input</p>
-                  <h2>Teach the assistant</h2>
+                  <Sparkles size={20} />
                 </div>
-                <Sparkles size={20} />
-              </div>
-              <form className="memory-ingest-form" onSubmit={handleMemoryIngest}>
-                <textarea
-                  value={memoryInput}
-                  onChange={(event) => setMemoryInput(event.target.value)}
-                  placeholder="Business note, customer rhythm, supplier issue"
-                />
-                <button type="submit" disabled={isMutating}>
-                  <ArrowUpRight size={16} />
-                  Save to memory
-                </button>
-              </form>
-            </section>
+                <form
+                  className="memory-ingest-form"
+                  onSubmit={handleMemoryIngest}>
+                  <textarea
+                    value={memoryInput}
+                    onChange={(event) => setMemoryInput(event.target.value)}
+                    placeholder="Business note, customer rhythm, supplier issue"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isMutating}>
+                    <ArrowUpRight size={16} />
+                    Save to memory
+                  </button>
+                </form>
+              </section>
 
-            <section className="panel action-feed">
-              <div className="panel-heading">
-                <div>
-                  <p className="eyebrow">Agent trace</p>
-                  <h2>Actions</h2>
-                </div>
-                <MessageSquareText size={20} />
-              </div>
-              <div className="action-list">
-                {actions.length ? (
-                  actions.map((action) => (
-                    <article className="action-row" key={action.id}>
-                      <ArrowUpRight size={16} />
-                      <span>{action.label}</span>
-                    </article>
-                  ))
-                ) : (
-                  <div className="empty-state compact">
-                    <Sparkles size={22} />
-                    <span>Agent actions appear here.</span>
+              <section className="panel action-feed">
+                <div className="panel-heading">
+                  <div>
+                    <p className="eyebrow">Agent trace</p>
+                    <h2>Actions</h2>
                   </div>
-                )}
-              </div>
-            </section>
-          </aside>
+                  <MessageSquareText size={20} />
+                </div>
+                <div className="action-list">
+                  {actions.length ? (
+                    actions.map((action) => (
+                      <article
+                        className="action-row"
+                        key={action.id}>
+                        <ArrowUpRight size={16} />
+                        <span>{action.label}</span>
+                      </article>
+                    ))
+                  ) : (
+                    <div className="empty-state compact">
+                      <Sparkles size={22} />
+                      <span>Agent actions appear here.</span>
+                    </div>
+                  )}
+                </div>
+              </section>
+            </aside>
           </div>
         ) : null}
       </section>
       {draftModal ? (
-        <DraftDrawer modal={draftModal} onClose={() => setDraftModal(null)} onCopy={copyDraft} />
+        <DraftDrawer
+          modal={draftModal}
+          onClose={() => setDraftModal(null)}
+          onCopy={copyDraft}
+        />
       ) : null}
     </main>
   );
@@ -742,7 +800,9 @@ function MemoryStatusBadge({
 }) {
   return (
     <div className="memory-status">
-      <span>{status?.backend === "chromadb" ? "ChromaDB" : "Fallback memory"}</span>
+      <span>
+        {status?.backend === "chromadb" ? "ChromaDB" : "Fallback memory"}
+      </span>
       <strong>{status?.recordCount ?? 0} records</strong>
       <small>
         {llmMode === "gemini" ? "Gemini live" : "Deterministic fallback"}
@@ -784,7 +844,9 @@ function InsightCard({
           <span key={item}>{item}</span>
         ))}
       </div>
-      <button type="button" onClick={onAction}>
+      <button
+        type="button"
+        onClick={onAction}>
         <ArrowUpRight size={16} />
         {buttonLabel}
       </button>
@@ -803,18 +865,25 @@ function DraftDrawer({
   onCopy: () => void;
 }) {
   return (
-    <aside className="draft-drawer" aria-label="Generated draft">
+    <aside
+      className="draft-drawer"
+      aria-label="Generated draft">
       <div className="draft-drawer-header">
         <div>
           <p className="eyebrow">{modal.subtitle}</p>
           <h2>{modal.title}</h2>
         </div>
-        <button type="button" onClick={onClose}>
+        <button
+          type="button"
+          onClick={onClose}>
           Close
         </button>
       </div>
       <pre>{modal.body}</pre>
-      <button className="copy-button" type="button" onClick={onCopy}>
+      <button
+        className="copy-button"
+        type="button"
+        onClick={onCopy}>
         <Copy size={16} />
         Copy
       </button>
@@ -842,10 +911,13 @@ function StockPage({ products }: { products: Product[] }) {
         {products.map((product) => {
           const averageSales = average(product.weeklySales);
           const daysLeft = averageSales ? product.stock / averageSales : 0;
-          const tone = daysLeft <= 2 ? "red" : daysLeft <= 7 ? "yellow" : "green";
+          const tone =
+            daysLeft <= 2 ? "red" : daysLeft <= 7 ? "yellow" : "green";
 
           return (
-            <article className="data-table-row stock-grid" key={product.id}>
+            <article
+              className="data-table-row stock-grid"
+              key={product.id}>
               <strong>{product.name}</strong>
               <span>
                 {product.stock} {product.unit}
@@ -905,7 +977,9 @@ function CustomersPage() {
           <span>Reason</span>
         </div>
         {rows.map((row) => (
-          <article className="data-table-row customer-grid" key={row.name}>
+          <article
+            className="data-table-row customer-grid"
+            key={row.name}>
             <strong>{row.name}</strong>
             <span>{row.lastOrder}</span>
             <span>{row.frequency}</span>
@@ -936,11 +1010,17 @@ function OrdersPage({ state }: { state: OperationsState }) {
           <span>Note</span>
         </div>
         {state.orders.map((order) => {
-          const customer = state.customers.find((item) => item.id === order.customerId);
-          const shipment = state.shipments.find((item) => item.orderId === order.id);
+          const customer = state.customers.find(
+            (item) => item.id === order.customerId,
+          );
+          const shipment = state.shipments.find(
+            (item) => item.orderId === order.id,
+          );
 
           return (
-            <article className="data-table-row orders-grid" key={order.id}>
+            <article
+              className="data-table-row orders-grid"
+              key={order.id}>
               <strong>#{order.id}</strong>
               <span>{customer?.name}</span>
               <StatusPill status={shipment?.risk ?? order.status} />
@@ -968,11 +1048,17 @@ function MemoryPage({
           <p className="eyebrow">History / Memory Page</p>
           <h2>Why the system made these decisions</h2>
         </div>
-        <MemoryStatusBadge status={memoryStatus} llmMode="fallback" generatedAt="" />
+        <MemoryStatusBadge
+          status={memoryStatus}
+          llmMode="fallback"
+          generatedAt=""
+        />
       </div>
       <div className="memory-explain-list">
         {insights.map((insight) => (
-          <article className="memory-explain-card" key={insight.id}>
+          <article
+            className="memory-explain-card"
+            key={insight.id}>
             <StatusPill status={insight.color} />
             <div>
               <h3>{insight.title}</h3>
@@ -1023,14 +1109,16 @@ function SegmentedControl({
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="segmented-control" role="tablist" aria-label="Board filter">
+    <div
+      className="segmented-control"
+      role="tablist"
+      aria-label="Board filter">
       {options.map((option) => (
         <button
           type="button"
           className={value === option ? "active" : ""}
           key={option}
-          onClick={() => onChange(option)}
-        >
+          onClick={() => onChange(option)}>
           {option}
         </button>
       ))}
@@ -1049,24 +1137,35 @@ function InventoryRow({
   onResolve: () => void;
   disabled: boolean;
 }) {
-  const stockPercent = Math.min(100, Math.round((product.stock / product.threshold) * 100));
+  const stockPercent = Math.min(
+    100,
+    Math.round((product.stock / product.threshold) * 100),
+  );
 
   return (
     <article className="inventory-row">
-      <img src={product.image} alt="" />
+      <img
+        src={product.image}
+        alt=""
+      />
       <div className="inventory-copy">
         <div>
           <strong>{product.name}</strong>
           <span>{alert.message}</span>
         </div>
-        <div className="stock-meter" aria-label={`${product.stock} ${product.unit} in stock`}>
+        <div
+          className="stock-meter"
+          aria-label={`${product.stock} ${product.unit} in stock`}>
           <i style={{ width: `${stockPercent}%` }} />
         </div>
         <small>
           {product.stock}/{product.threshold} {product.unit}
         </small>
       </div>
-      <button type="button" onClick={onResolve} disabled={disabled}>
+      <button
+        type="button"
+        onClick={onResolve}
+        disabled={disabled}>
         Draft
       </button>
     </article>
@@ -1141,7 +1240,9 @@ function formatGeneratedAt(value: string) {
 function summarizeOrderItems(order: Order, state: OperationsState) {
   return order.items
     .map((item) => {
-      const product = state.products.find((candidate) => candidate.id === item.productId);
+      const product = state.products.find(
+        (candidate) => candidate.id === item.productId,
+      );
       return `${item.quantity}x ${product?.name ?? "Unknown product"}`;
     })
     .join(", ");

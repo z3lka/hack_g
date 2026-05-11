@@ -2,27 +2,40 @@ import re
 from datetime import datetime
 from uuid import uuid4
 
-from .models import AgentAction, AgentResult, ChatMessage, OperationsState, Order, Product, Shipment, Task
-
+from .gemini_client import gemini_client
+from .models import (
+    AgentAction,
+    AgentResult,
+    ChatMessage,
+    OperationsState,
+    Order,
+    Product,
+    Shipment,
+    Task,
+)
 
 ORDER_ID_PATTERN = re.compile(r"(?:order|siparis|#)?\s*(\d{3,})", re.IGNORECASE)
 
 
 class OperationsAgent:
-    def lookup_order_status(self, order_id: str, state: OperationsState) -> tuple[Order, Shipment | None] | None:
+    def lookup_order_status(
+        self, order_id: str, state: OperationsState
+    ) -> tuple[Order, Shipment | None] | None:
         order = next((item for item in state.orders if item.id == order_id), None)
 
         if order is None:
             return None
 
-        shipment = next((item for item in state.shipments if item.orderId == order.id), None)
+        shipment = next(
+            (item for item in state.shipments if item.orderId == order.id), None
+        )
         return order, shipment
 
     def check_stock(self, product_id: str, state: OperationsState) -> Product | None:
         return next((item for item in state.products if item.id == product_id), None)
 
     def detect_shipping_risks(self, state: OperationsState) -> list[Shipment]:
-        return [shipment for shipment in state.shipments if shipment.risk != "clear" and not shipment.notified]
+        return [s for s in state.shipments if s.risk != "clear" and not s.notified]
 
     def suggest_restock(self, product_id: str, state: OperationsState) -> str:
         product = self.check_stock(product_id, state)
@@ -31,7 +44,9 @@ class OperationsAgent:
             return "No supplier draft available because the product could not be found."
 
         average_demand = sum(product.weeklySales) / len(product.weeklySales)
-        recommended_quantity = max(product.threshold * 2 - product.stock, round(average_demand * 10))
+        recommended_quantity = max(
+            product.threshold * 2 - product.stock, round(average_demand * 10)
+        )
 
         return (
             f"Draft to {product.supplier}: Please prepare {recommended_quantity} {product.unit} "
@@ -39,104 +54,133 @@ class OperationsAgent:
             f"{product.threshold}, and 7-day average demand is {round(average_demand)} {product.unit}/day."
         )
 
-    def generate_customer_reply(self, message: str, state: OperationsState) -> AgentResult:
-        normalized = message.lower()
-        order_id_match = ORDER_ID_PATTERN.search(normalized)
+    def generate_customer_reply(
+        self, message: str, state: OperationsState
+    ) -> AgentResult:
         actions: list[AgentAction] = []
 
-        if order_id_match:
-            order_id = order_id_match.group(1)
-            context = self.lookup_order_status(order_id, state)
+        # Hangi tool'ların kullanıldığını tespit et
+        detected_order_id = self._detect_order_id(message)
+        detected_product = self._detect_product(message, state)
+
+        if detected_order_id:
             actions.append(
                 AgentAction(
                     id=str(uuid4()),
-                    label=f"Looked up order {order_id}",
+                    label=f"Looked up order {detected_order_id}",
                     type="lookup_order",
-                    payload={"orderId": order_id},
+                    payload={"orderId": detected_order_id},
                 )
             )
 
-            if context is None:
-                return AgentResult(
-                    response="I could not find that order number. Please check the number and I can look again.",
-                    actions=actions,
+        if detected_product:
+            actions.append(
+                AgentAction(
+                    id=str(uuid4()),
+                    label=f"Checked stock for {detected_product.name}",
+                    type="check_stock",
+                    payload={"productId": detected_product.id},
                 )
-
-            order, shipment = context
-            item_summary = summarize_order_items(order, state)
-
-            if shipment is not None:
-                if shipment.risk == "delayed":
-                    risk_sentence = "It is flagged as delayed, so we have escalated it with the carrier."
-                elif shipment.risk == "watch":
-                    risk_sentence = "It is being watched because pickup has not been scanned yet."
-                else:
-                    risk_sentence = "It is moving normally."
-
-                if shipment.risk != "clear":
-                    actions.append(
-                        AgentAction(
-                            id=str(uuid4()),
-                            label=f"Prepare customer update for order {order.id}",
-                            type="notify_customer",
-                            payload={"orderId": order.id},
-                        )
-                    )
-
-                return AgentResult(
-                    response=(
-                        f"Order {order.id} contains {item_summary}. {shipment.carrier} shows ETA "
-                        f"{shipment.eta}. Last update: {shipment.lastScan}. {risk_sentence}"
-                    ),
-                    actions=actions,
-                )
-
-            return AgentResult(
-                response=(
-                    f"Order {order.id} contains {item_summary}. It is currently {order.status}, "
-                    "and the warehouse task list has it scheduled for today's preparation."
-                ),
-                actions=actions,
             )
 
-        stock_product = next(
-            (product for product in state.products if product.name.lower().split(" ")[0] in normalized),
+        # Gemini'ye gönder
+        prompt = self._build_chat_prompt(message, state)
+        response_text = gemini_client.generate_text(prompt)
+
+        if response_text:
+            return AgentResult(response=response_text, actions=actions)
+
+        # Gemini yoksa fallback
+        return AgentResult(
+            response=self._fallback_reply(
+                message, detected_order_id, detected_product, state
+            ),
+            actions=actions,
+        )
+
+    def _detect_order_id(self, message: str) -> str | None:
+        match = ORDER_ID_PATTERN.search(message.lower())
+        return match.group(1) if match else None
+
+    def _detect_product(self, message: str, state: OperationsState) -> Product | None:
+        normalized = message.lower()
+        return next(
+            (p for p in state.products if p.name.lower().split(" ")[0] in normalized),
             None,
         )
 
-        if "stock" in normalized or "available" in normalized or stock_product is not None:
-            product = stock_product or state.products[0]
-            actions.append(
-                AgentAction(
-                    id=str(uuid4()),
-                    label=f"Checked stock for {product.name}",
-                    type="check_stock",
-                    payload={"productId": product.id},
-                )
-            )
-
-            return AgentResult(
-                response=(
-                    f"{product.name} has {product.stock} {product.unit} available. "
-                    f"Reorder threshold is {product.threshold} {product.unit}."
-                ),
-                actions=actions,
-            )
-
-        actions.append(
-            AgentAction(
-                id=str(uuid4()),
-                label="Created daily task plan",
-                type="create_task_plan",
-                payload={"source": "customer_message"},
-            )
+    def _build_chat_prompt(self, message: str, state: OperationsState) -> str:
+        product_lines = "\n".join(
+            f"- {p.name} (id={p.id}): stock={p.stock} {p.unit}, threshold={p.threshold}, supplier={p.supplier}"
+            for p in state.products
         )
-        return AgentResult(
-            response=(
-                "I checked open orders, stock risks, and shipment exceptions. The highest priority "
-                "items are delayed order 131 and restocking fig jam."
-            ),
-            actions=actions,
+        order_lines = "\n".join(
+            f"- Order {o.id}: status={o.status}, customerId={o.customerId}, total={o.total} TRY, dueToday={o.dueToday}"
+            for o in state.orders
+        )
+        shipment_lines = "\n".join(
+            f"- Order {s.orderId}: carrier={s.carrier}, risk={s.risk}, eta={s.eta}, lastScan={s.lastScan}"
+            for s in state.shipments
+        )
+        customer_lines = "\n".join(
+            f"- {c.name} (id={c.id}): channel={c.channel}" for c in state.customers
+        )
+
+        return f"""
+You are a helpful AI assistant for a small Turkish business (KOBİ).
+A customer or staff member sent the following message. Reply in the same language as the message (Turkish or English).
+Be concise, friendly, and accurate. Use only the data provided below — do not invent facts.
+
+Customer/staff message:
+"{message}"
+
+Current business data:
+
+PRODUCTS:
+{product_lines}
+
+ORDERS:
+{order_lines}
+
+SHIPMENTS:
+{shipment_lines}
+
+CUSTOMERS:
+{customer_lines}
+
+Reply with a single short paragraph. No bullet points, no markdown.
+""".strip()
+
+    def _fallback_reply(
+        self,
+        message: str,
+        order_id: str | None,
+        product: Product | None,
+        state: OperationsState,
+    ) -> str:
+        if order_id:
+            context = self.lookup_order_status(order_id, state)
+            if context is None:
+                return f"I could not find order {order_id}. Please check the number and try again."
+            order, shipment = context
+            item_summary = summarize_order_items(order, state)
+            if shipment:
+                return (
+                    f"Order {order.id} contains {item_summary}. "
+                    f"{shipment.carrier} shows ETA {shipment.eta}. "
+                    f"Last update: {shipment.lastScan}."
+                )
+            return f"Order {order.id} contains {item_summary}. Current status: {order.status}."
+
+        if product:
+            return (
+                f"{product.name} has {product.stock} {product.unit} available. "
+                f"Reorder threshold is {product.threshold} {product.unit}."
+            )
+
+        return (
+            "I checked open orders, stock risks, and shipment exceptions. "
+            "The highest priority items are delayed order 131 and restocking fig jam."
         )
 
     def create_daily_task_plan(self, state: OperationsState) -> list[Task]:
@@ -178,20 +222,18 @@ def create_chat_message(text: str, role: str) -> ChatMessage:
 
 def summarize_order_items(order: Order, state: OperationsState) -> str:
     parts: list[str] = []
-
     for item in order.items:
-        product = next((candidate for candidate in state.products if candidate.id == item.productId), None)
-        parts.append(f"{item.quantity}x {product.name if product else 'Unknown product'}")
-
+        product = next((p for p in state.products if p.id == item.productId), None)
+        parts.append(
+            f"{item.quantity}x {product.name if product else 'Unknown product'}"
+        )
     return ", ".join(parts)
 
 
 def dedupe_tasks(next_tasks: list[Task], existing_tasks: list[Task]) -> list[Task]:
-    existing_keys = {f"{task.owner}-{task.orderId}-{task.title}" for task in existing_tasks}
+    existing_keys = {f"{t.owner}-{t.orderId}-{t.title}" for t in existing_tasks}
     return [
-        task
-        for task in next_tasks
-        if f"{task.owner}-{task.orderId}-{task.title}" not in existing_keys
+        t for t in next_tasks if f"{t.owner}-{t.orderId}-{t.title}" not in existing_keys
     ]
 
 

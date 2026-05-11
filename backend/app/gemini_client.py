@@ -35,6 +35,21 @@ class GeminiClient:
             self.last_error = str(exc)
             return None
 
+    def generate_text(self, prompt: str) -> str | None:
+        if not self.api_key:
+            self.last_error = "GEMINI_API_KEY is not set."
+            return None
+
+        try:
+            from google import genai
+
+            client = genai.Client(api_key=self.api_key)
+            response = client.models.generate_content(model=self.model, contents=prompt)
+            return getattr(response, "text", None)
+        except Exception as exc:
+            self.last_error = str(exc)
+            return None
+
 
 def _parse_json(text: str) -> dict | None:
     cleaned = text.strip()
