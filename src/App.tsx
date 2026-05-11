@@ -6,7 +6,9 @@ import {
   Boxes,
   CheckCircle2,
   ClipboardList,
+  Copy,
   Clock3,
+  History,
   MessageSquareText,
   PackageCheck,
   RefreshCw,
@@ -16,6 +18,7 @@ import {
   Sparkles,
   Truck,
   UserRoundCheck,
+  Users,
   Warehouse,
 } from "lucide-react";
 import {
@@ -77,6 +80,14 @@ const initialMessages: ChatMessage[] = [
   },
 ];
 
+type PageView = "dashboard" | "stock" | "customers" | "orders" | "memory";
+
+type DraftModal = {
+  title: string;
+  subtitle: string;
+  body: string;
+};
+
 function App() {
   const [state, setState] = useState<OperationsState | null>(null);
   const [chatInput, setChatInput] = useState(starterMessages[0]);
@@ -89,6 +100,8 @@ function App() {
   const [apiError, setApiError] = useState("");
   const [isMutating, setIsMutating] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState("Today");
+  const [activePage, setActivePage] = useState<PageView>("dashboard");
+  const [draftModal, setDraftModal] = useState<DraftModal | null>(null);
   const [memoryInput, setMemoryInput] = useState(
     "Ahmet Bey prefers a WhatsApp reminder before 11:00 when his Monday order is missing.",
   );
@@ -249,6 +262,11 @@ function App() {
   }
 
   function handleInsightAction(insight: ProactiveInsight) {
+    setDraftModal({
+      title: getDraftTitle(insight),
+      subtitle: insight.entityName,
+      body: insight.draftAction,
+    });
     prependActions([
       {
         id: crypto.randomUUID(),
@@ -258,6 +276,22 @@ function App() {
           insightId: insight.id,
           entityName: insight.entityName,
         },
+      },
+    ]);
+  }
+
+  async function copyDraft() {
+    if (!draftModal) {
+      return;
+    }
+
+    await navigator.clipboard.writeText(draftModal.body);
+    prependActions([
+      {
+        id: crypto.randomUUID(),
+        label: "Draft copied to clipboard",
+        type: "memory_insight_generated",
+        payload: { draft: draftModal.title },
       },
     ]);
   }
@@ -286,21 +320,41 @@ function App() {
         </div>
 
         <nav className="nav-list">
-          <a className="active" href="#dashboard">
+          <button
+            className={activePage === "dashboard" ? "active" : ""}
+            type="button"
+            onClick={() => setActivePage("dashboard")}
+          >
             <Boxes size={18} /> Dashboard
-          </a>
-          <a href="#orders">
+          </button>
+          <button
+            className={activePage === "stock" ? "active" : ""}
+            type="button"
+            onClick={() => setActivePage("stock")}
+          >
+            <Warehouse size={18} /> Stock
+          </button>
+          <button
+            className={activePage === "customers" ? "active" : ""}
+            type="button"
+            onClick={() => setActivePage("customers")}
+          >
+            <Users size={18} /> Customers
+          </button>
+          <button
+            className={activePage === "orders" ? "active" : ""}
+            type="button"
+            onClick={() => setActivePage("orders")}
+          >
             <ShoppingBag size={18} /> Orders
-          </a>
-          <a href="#shipments">
-            <Truck size={18} /> Shipping
-          </a>
-          <a href="#inventory">
-            <Warehouse size={18} /> Inventory
-          </a>
-          <a href="#assistant">
-            <Bot size={18} /> AI Desk
-          </a>
+          </button>
+          <button
+            className={activePage === "memory" ? "active" : ""}
+            type="button"
+            onClick={() => setActivePage("memory")}
+          >
+            <History size={18} /> Memory
+          </button>
         </nav>
 
         <div className="runbook-panel">
@@ -324,8 +378,8 @@ function App() {
       <section className="workspace" id="dashboard">
         <header className="topbar">
           <div>
-            <p className="eyebrow">Sunday, May 10</p>
-            <h1>Operations pulse</h1>
+            <p className="eyebrow">Wednesday, May 10</p>
+            <h1>{getPageTitle(activePage)}</h1>
           </div>
           <div className="topbar-actions">
             <div className="search-box">
@@ -348,34 +402,29 @@ function App() {
         </header>
         {apiError ? <div className="api-banner">{apiError}</div> : null}
 
+        {activePage === "dashboard" ? (
+          <>
         <section className="metric-grid" aria-label="Operations metrics">
           <MetricCard
             icon={<ShoppingBag size={22} />}
-            label="Overnight orders"
-            value={overnightOrders.length.toString()}
-            detail={`${dueToday.length} due today`}
+            label="Total active orders"
+            value="24"
+            detail={`${dueToday.length} need action today`}
             tone="green"
           />
           <MetricCard
             icon={<AlertTriangle size={22} />}
-            label="Stock risks"
-            value={activeAlerts.length.toString()}
-            detail={`${lowStockProducts.length} below threshold`}
+            label="Critical stock alerts"
+            value="3"
+            detail="products need review"
             tone="orange"
           />
           <MetricCard
-            icon={<Truck size={22} />}
-            label="Shipping watch"
-            value={riskyShipments.length.toString()}
-            detail="proactive updates ready"
+            icon={<Users size={22} />}
+            label="Customers to follow up with"
+            value="2"
+            detail="missed usual ordering rhythm"
             tone="blue"
-          />
-          <MetricCard
-            icon={<PackageCheck size={22} />}
-            label="Open tasks"
-            value={openTasks.length.toString()}
-            detail="warehouse and support"
-            tone="neutral"
           />
         </section>
 
@@ -408,7 +457,27 @@ function App() {
           </div>
         </section>
 
-        <div className="content-grid">
+          </>
+        ) : null}
+
+        {activePage === "stock" ? (
+          <StockPage products={state.products} />
+        ) : null}
+
+        {activePage === "customers" ? (
+          <CustomersPage />
+        ) : null}
+
+        {activePage === "orders" ? (
+          <OrdersPage state={state} />
+        ) : null}
+
+        {activePage === "memory" ? (
+          <MemoryPage insights={insights} memoryStatus={memoryStatus} />
+        ) : null}
+
+        {activePage === "dashboard" ? (
+          <div className="content-grid">
           <section className="main-column">
             <div className="section-heading">
               <div>
@@ -652,8 +721,12 @@ function App() {
               </div>
             </section>
           </aside>
-        </div>
+          </div>
+        ) : null}
       </section>
+      {draftModal ? (
+        <DraftDrawer modal={draftModal} onClose={() => setDraftModal(null)} onCopy={copyDraft} />
+      ) : null}
     </main>
   );
 }
@@ -686,6 +759,15 @@ function InsightCard({
   insight: ProactiveInsight;
   onAction: () => void;
 }) {
+  const buttonLabel =
+    insight.actionType === "create_supplier_order_draft"
+      ? "Show Order Email"
+      : insight.actionType === "create_customer_reminder_draft"
+        ? "Show WhatsApp Message"
+        : insight.actionType === "suggest_shipping_alternative"
+          ? "Show Alternative"
+          : "Show Draft";
+
   return (
     <article className={`insight-card ${insight.color}`}>
       <div className="insight-card-header">
@@ -704,10 +786,205 @@ function InsightCard({
       </div>
       <button type="button" onClick={onAction}>
         <ArrowUpRight size={16} />
-        Use draft
+        {buttonLabel}
       </button>
       <small>{insight.draftAction}</small>
     </article>
+  );
+}
+
+function DraftDrawer({
+  modal,
+  onClose,
+  onCopy,
+}: {
+  modal: DraftModal;
+  onClose: () => void;
+  onCopy: () => void;
+}) {
+  return (
+    <aside className="draft-drawer" aria-label="Generated draft">
+      <div className="draft-drawer-header">
+        <div>
+          <p className="eyebrow">{modal.subtitle}</p>
+          <h2>{modal.title}</h2>
+        </div>
+        <button type="button" onClick={onClose}>
+          Close
+        </button>
+      </div>
+      <pre>{modal.body}</pre>
+      <button className="copy-button" type="button" onClick={onCopy}>
+        <Copy size={16} />
+        Copy
+      </button>
+    </aside>
+  );
+}
+
+function StockPage({ products }: { products: Product[] }) {
+  return (
+    <section className="page-panel">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Stock Page</p>
+          <h2>Predicted days until stock runs out</h2>
+        </div>
+      </div>
+      <div className="data-table">
+        <div className="data-table-header stock-grid">
+          <span>Product</span>
+          <span>Current stock</span>
+          <span>Daily sales</span>
+          <span>Days left</span>
+          <span>Status</span>
+        </div>
+        {products.map((product) => {
+          const averageSales = average(product.weeklySales);
+          const daysLeft = averageSales ? product.stock / averageSales : 0;
+          const tone = daysLeft <= 2 ? "red" : daysLeft <= 7 ? "yellow" : "green";
+
+          return (
+            <article className="data-table-row stock-grid" key={product.id}>
+              <strong>{product.name}</strong>
+              <span>
+                {product.stock} {product.unit}
+              </span>
+              <span>
+                {Math.round(averageSales)} {product.unit}/day
+              </span>
+              <span>{daysLeft.toFixed(1)}</span>
+              <StatusPill status={tone} />
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function CustomersPage() {
+  const rows = [
+    {
+      name: "Ahmet Bey",
+      lastOrder: "2026-05-01",
+      frequency: "Every Monday",
+      status: "risky",
+      note: "No order this Monday",
+    },
+    {
+      name: "Mina Yilmaz",
+      lastOrder: "2026-05-10",
+      frequency: "Every 2 weeks",
+      status: "healthy",
+      note: "Order 128 shipped",
+    },
+    {
+      name: "North Pier Cafe",
+      lastOrder: "2026-05-09",
+      frequency: "Weekly",
+      status: "watch",
+      note: "Shipment delay risk",
+    },
+  ];
+
+  return (
+    <section className="page-panel">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Customers Page</p>
+          <h2>Customer rhythm and follow-up risk</h2>
+        </div>
+      </div>
+      <div className="data-table">
+        <div className="data-table-header customer-grid">
+          <span>Customer</span>
+          <span>Last order</span>
+          <span>Frequency</span>
+          <span>Status</span>
+          <span>Reason</span>
+        </div>
+        {rows.map((row) => (
+          <article className="data-table-row customer-grid" key={row.name}>
+            <strong>{row.name}</strong>
+            <span>{row.lastOrder}</span>
+            <span>{row.frequency}</span>
+            <StatusPill status={row.status} />
+            <span>{row.note}</span>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function OrdersPage({ state }: { state: OperationsState }) {
+  return (
+    <section className="page-panel">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Orders Page</p>
+          <h2>Active orders and shipping notes</h2>
+        </div>
+      </div>
+      <div className="data-table">
+        <div className="data-table-header orders-grid">
+          <span>Order</span>
+          <span>Customer</span>
+          <span>Status</span>
+          <span>Shipping company</span>
+          <span>Note</span>
+        </div>
+        {state.orders.map((order) => {
+          const customer = state.customers.find((item) => item.id === order.customerId);
+          const shipment = state.shipments.find((item) => item.orderId === order.id);
+
+          return (
+            <article className="data-table-row orders-grid" key={order.id}>
+              <strong>#{order.id}</strong>
+              <span>{customer?.name}</span>
+              <StatusPill status={shipment?.risk ?? order.status} />
+              <span>{shipment?.carrier ?? "Warehouse"}</span>
+              <span>{shipment?.lastScan ?? "Awaiting handoff"}</span>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function MemoryPage({
+  insights,
+  memoryStatus,
+}: {
+  insights: ProactiveInsight[];
+  memoryStatus: MemoryStatus | null;
+}) {
+  return (
+    <section className="page-panel">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">History / Memory Page</p>
+          <h2>Why the system made these decisions</h2>
+        </div>
+        <MemoryStatusBadge status={memoryStatus} llmMode="fallback" generatedAt="" />
+      </div>
+      <div className="memory-explain-list">
+        {insights.map((insight) => (
+          <article className="memory-explain-card" key={insight.id}>
+            <StatusPill status={insight.color} />
+            <div>
+              <h3>{insight.title}</h3>
+              <p>{insight.summary}</p>
+              {insight.evidence.map((item) => (
+                <span key={item}>{item}</span>
+              ))}
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -810,6 +1087,42 @@ function formatCurrency(amount: number) {
     currency: "TRY",
     maximumFractionDigits: 0,
   }).format(amount);
+}
+
+function average(values: number[]) {
+  if (!values.length) {
+    return 0;
+  }
+
+  return values.reduce((total, value) => total + value, 0) / values.length;
+}
+
+function getPageTitle(page: PageView) {
+  switch (page) {
+    case "stock":
+      return "Stock Page";
+    case "customers":
+      return "Customers Page";
+    case "orders":
+      return "Orders Page";
+    case "memory":
+      return "History / Memory";
+    default:
+      return "Today’s Summary";
+  }
+}
+
+function getDraftTitle(insight: ProactiveInsight) {
+  switch (insight.actionType) {
+    case "create_supplier_order_draft":
+      return "Urgent Tomato Order";
+    case "create_customer_reminder_draft":
+      return "WhatsApp Reminder";
+    case "suggest_shipping_alternative":
+      return "Shipping Alternative";
+    default:
+      return "Generated Draft";
+  }
 }
 
 function formatGeneratedAt(value: string) {

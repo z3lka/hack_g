@@ -62,9 +62,9 @@ Return strict JSON only with this shape:
 }}
 
 Required insights:
-1. Red tomato stockout risk with a Mehmet Bey supplier order draft.
-2. Yellow Ahmet Bey missed Monday order with WhatsApp reminder draft.
-3. Orange Shipping Company X repeated delays with alternative carrier suggestion.
+1. Red TOMATOES: CRITICAL. Mention last 3 weeks, tomatoes running out every Friday, tomorrow being Friday, current stock 8 kg, average daily sales 15 kg, and Mehmet Bey.
+2. Yellow CUSTOMER FOLLOW-UP: Ahmet Bey. Mention orders every Monday for the last 6 weeks, no order this Monday, today Wednesday, and a reminder draft.
+3. Orange SUPPLIER WARNING: Shipping Company X. Mention average 2-day delay in last 3 orders and Company Y as an active regional alternative.
 4. Green Olive Oil sufficient stock for 3 weeks.
 
 Current operations snapshot:
@@ -115,11 +115,11 @@ def _fallback_insights(records: list[MemoryRecord]) -> list[ProactiveInsight]:
         ProactiveInsight(
             id="fallback-tomatoes",
             color="red",
-            entityName="Tomatoes",
-            title="Tomatoes: Sunday stockout risk",
-            summary="Tomatoes ran out during the last two Sundays, so this Sunday is a high-risk stockout window.",
+            entityName="TOMATOES",
+            title="TOMATOES: CRITICAL",
+            summary="According to the data from the last 3 weeks, your tomato stock runs out every Friday. Tomorrow is Friday. Current stock is 8 kg, while average daily sales are 15 kg. I recommend placing an order with Mehmet Bey.",
             evidence=_evidence(records, "Tomatoes"),
-            draftAction="Draft order to Mehmet Bey: Please prepare a Sunday safety restock of 80 kg tomatoes before 11:00.",
+            draftAction="Subject: Urgent Tomato Order\n\nDear Mehmet Bey,\n\nOur current stock has dropped to a critical level. Based on our previous orders, we would like to place an order for 50 kg of tomatoes this week. Could you please let us know your availability?",
             actionType="create_supplier_order_draft",
             confidence=0.93,
         ),
@@ -127,10 +127,10 @@ def _fallback_insights(records: list[MemoryRecord]) -> list[ProactiveInsight]:
             id="fallback-ahmet",
             color="yellow",
             entityName="Ahmet Bey",
-            title="Ahmet Bey: usual Monday order missing",
-            summary="Ahmet Bey normally orders around 500 TL every Monday, but no order is visible this week.",
+            title="CUSTOMER FOLLOW-UP: Ahmet Bey",
+            summary="Ahmet Bey has placed an order every Monday for the last 6 weeks. He did not place an order this Monday, and today is Wednesday. I prepared a reminder message.",
             evidence=_evidence(records, "Ahmet Bey"),
-            draftAction="WhatsApp draft: Merhaba Ahmet Bey, bu haftaki siparisiniz icin yardimci olmami ister misiniz?",
+            draftAction="Hello Ahmet Bey, can we help you with your order this week? Would you like us to prepare your weekly basket?",
             actionType="create_customer_reminder_draft",
             confidence=0.88,
         ),
@@ -138,10 +138,10 @@ def _fallback_insights(records: list[MemoryRecord]) -> list[ProactiveInsight]:
             id="fallback-shipping-x",
             color="orange",
             entityName="Shipping Company X",
-            title="Shipping Company X: repeated delay pattern",
-            summary="The last three Shipping Company X deliveries were late, so regional orders should be routed elsewhere today.",
+            title="SUPPLIER WARNING: Shipping Company X",
+            summary="This company was delayed by an average of 2 days in your last 3 orders. As an alternative, Company Y is active in your region.",
             evidence=_evidence(records, "Shipping Company X") + _evidence(records, "Alternative Carrier Y"),
-            draftAction="Suggestion: Use Alternative Carrier Y for regional shipments until Shipping Company X performance improves.",
+            draftAction="Alternative suggestion: Use Company Y for regional deliveries this week. It is active in your region and has a better recent delivery record.",
             actionType="suggest_shipping_alternative",
             confidence=0.84,
         ),

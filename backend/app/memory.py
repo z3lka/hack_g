@@ -14,15 +14,15 @@ DEMO_MEMORY: list[MemoryRecordInput] = [
     MemoryRecordInput(
         category="inventory",
         entityName="Tomatoes",
-        eventDate="2025-04-15",
-        text="2025-04-15: Tomatoes ran out on Sunday, 20 customers complained, and Mehmet Bey was contacted for an emergency restock.",
+        eventDate="2026-04-17",
+        text="2026-04-17: Tomatoes ran out on Friday. Current stock reached 0 kg before the evening rush and Mehmet Bey was contacted for an urgent restock.",
         metadata={"severity": "red", "supplier": "Mehmet Bey"},
     ),
     MemoryRecordInput(
         category="inventory",
         entityName="Tomatoes",
-        eventDate="2025-04-22",
-        text="2025-04-22: Tomatoes ran out again on Sunday afternoon. Weekend demand was higher than expected.",
+        eventDate="2026-04-24",
+        text="2026-04-24: Tomatoes ran out again on Friday. Average daily tomato sales were 15 kg during the week.",
         metadata={"severity": "red", "supplier": "Mehmet Bey"},
     ),
     MemoryRecordInput(
@@ -35,8 +35,8 @@ DEMO_MEMORY: list[MemoryRecordInput] = [
     MemoryRecordInput(
         category="customer",
         entityName="Ahmet Bey",
-        eventDate="2025-05-05",
-        text="Ahmet Bey places an average 500 TL order every Monday, usually before lunch.",
+        eventDate="2026-05-04",
+        text="Ahmet Bey placed an order every Monday for the last 6 weeks, usually before lunch.",
         metadata={"weekday": "Monday", "averageOrderValue": 500},
     ),
     MemoryRecordInput(
@@ -50,7 +50,7 @@ DEMO_MEMORY: list[MemoryRecordInput] = [
         category="shipping",
         entityName="Shipping Company X",
         eventDate="2025-05-01",
-        text="Shipping Company X delivered late on 3 of the last 3 orders and caused two customer support calls.",
+        text="Shipping Company X was delayed by an average of 2 days in the last 3 orders and caused two customer support calls.",
         metadata={"lateDeliveries": 3, "severity": "orange"},
     ),
     MemoryRecordInput(
@@ -155,9 +155,9 @@ def query_memory(query: str, limit: int = 8) -> list[MemoryRecord]:
 
 def query_memory_for_morning() -> list[MemoryRecord]:
     queries = [
-        "Tomatoes ran out Sunday Mehmet Bey supplier draft order",
-        "Ahmet Bey Monday order WhatsApp reminder average 500 TL",
-        "Shipping Company X late deliveries alternative carrier",
+        "Tomatoes run out every Friday current stock 8 kg average daily sales 15 kg Mehmet Bey",
+        "Ahmet Bey Monday order last 6 weeks today Wednesday WhatsApp reminder",
+        "Shipping Company X average 2 days delayed last 3 orders Company Y",
         "Olive Oil stock sufficient 3 weeks",
     ]
     records: list[MemoryRecord] = []
