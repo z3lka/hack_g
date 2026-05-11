@@ -74,6 +74,10 @@ export GEMINI_EMBEDDING_MODEL="gemini-embedding-001"
 export CHROMA_DB_PATH="./chroma_store"
 ```
 
+The Telegram and WhatsApp floating buttons are local mock composers. They do not
+redirect to external apps or require bot credentials.
+
+
 Start the frontend in a second terminal:
 
 ```bash
