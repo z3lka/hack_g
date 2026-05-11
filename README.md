@@ -51,6 +51,7 @@ Actions mutate the FastAPI in-memory state so the dashboard changes visibly duri
 ## Memory API
 
 - `GET /api/memory/status`: returns ChromaDB/fallback status and record count.
+- `GET /api/memory/records`: lists stored business memory records for the Memory page.
 - `POST /api/memory/seed`: resets demo memory records.
 - `POST /api/memory/ingest`: adds new memory records.
 - `POST /api/insights/morning`: retrieves memory and generates proactive insight cards.

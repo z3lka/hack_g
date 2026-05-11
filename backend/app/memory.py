@@ -15,9 +15,7 @@ def _slug(value: str) -> str:
 COLLECTION_BASE_NAME = os.getenv("CHROMA_COLLECTION_NAME", "business_memory")
 PERSIST_PATH = os.getenv("CHROMA_DB_PATH") or os.getenv("CHROMA_PATH", "./chroma_store")
 EMBEDDING_DIMENSIONS = int(os.getenv("EMBEDDING_DIMENSIONS", "768"))
-SENTENCE_TRANSFORMER_MODEL = os.getenv(
-    "SENTENCE_TRANSFORMER_MODEL", "all-MiniLM-L6-v2"
-)
+SENTENCE_TRANSFORMER_MODEL = os.getenv("SENTENCE_TRANSFORMER_MODEL", "all-MiniLM-L6-v2")
 COLLECTION_NAME = "_".join(
     [
         _slug(COLLECTION_BASE_NAME),
@@ -158,6 +156,24 @@ def ingest_memory(records: list[MemoryRecordInput]) -> list[MemoryRecord]:
 
     _add_records_to_collection(collection, built_records)
     return built_records
+
+
+def list_memory_records() -> list[MemoryRecord]:
+    collection = _get_collection()
+
+    if collection is None:
+        return list(_fallback_records)
+
+    result = collection.get(include=["documents", "metadatas"])
+    documents = result.get("documents", [])
+    metadatas = result.get("metadatas", [])
+    ids = result.get("ids", [])
+
+    records = [
+        _record_from_chroma(record_id, document, metadata)
+        for record_id, document, metadata in zip(ids, documents, metadatas)
+    ]
+    return sorted(records, key=lambda record: record.eventDate or "", reverse=True)
 
 
 def query_memory(query: str, limit: int = 8) -> list[MemoryRecord]:
@@ -356,7 +372,9 @@ def _metadata_for_chroma(record: MemoryRecord) -> dict[str, str | int | bool]:
     return metadata
 
 
-def _record_from_chroma(record_id: str, document: str, metadata: dict[str, str | int | bool]) -> MemoryRecord:
+def _record_from_chroma(
+    record_id: str, document: str, metadata: dict[str, str | int | bool]
+) -> MemoryRecord:
     return MemoryRecord(
         id=record_id,
         text=document,

@@ -64,9 +64,13 @@ class OperationsAgent:
             return response_text.strip()
 
         return (
-            f"Draft to {product.supplier}: Please prepare {recommended_quantity} {product.unit} "
-            f"of {product.name}. Current stock is {product.stock} {product.unit}, threshold is "
-            f"{product.threshold}, and 7-day average demand is {round(average_demand)} {product.unit}/day."
+            f"Konu: {product.name} Siparişi\n\n"
+            f"Merhaba {product.supplier},\n\n"
+            f"Mevcut {product.name} stoğumuz {product.stock} {product.unit} seviyesinde. "
+            f"Yeniden sipariş eşiğimiz {product.threshold} {product.unit} ve günlük ortalama "
+            f"satışımız yaklaşık {round(average_demand)} {product.unit}.\n\n"
+            f"Bu hafta için {recommended_quantity} {product.unit} {product.name} siparişi "
+            "oluşturmak istiyoruz. Uygunluk durumunuzu paylaşabilir misiniz?"
         )
 
     def generate_customer_reply(

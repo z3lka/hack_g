@@ -25,6 +25,7 @@ import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import {
   completeTaskRequest,
   createRestockDraft,
+  fetchMemoryRecords,
   fetchMorningInsights,
   fetchState,
   generateTaskPlan,
@@ -37,6 +38,7 @@ import type {
   AgentAction,
   ChatMessage,
   InventoryAlert,
+  MemoryRecord,
   MemoryStatus,
   OperationsState,
   Order,
@@ -88,6 +90,7 @@ function App() {
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [actions, setActions] = useState<AgentAction[]>([]);
   const [insights, setInsights] = useState<ProactiveInsight[]>([]);
+  const [memoryRecords, setMemoryRecords] = useState<MemoryRecord[]>([]);
   const [memoryStatus, setMemoryStatus] = useState<MemoryStatus | null>(null);
   const [llmMode, setLlmMode] = useState<"gemini" | "fallback">("fallback");
   const [insightsGeneratedAt, setInsightsGeneratedAt] = useState("");
@@ -96,6 +99,7 @@ function App() {
   const [selectedFilter, setSelectedFilter] = useState("Today");
   const [activePage, setActivePage] = useState<PageView>("dashboard");
   const [draftModal, setDraftModal] = useState<DraftModal | null>(null);
+  const [memorySearch, setMemorySearch] = useState("");
   const [memoryInput, setMemoryInput] = useState(
     "Ahmet Bey prefers a WhatsApp reminder before 11:00 when his Monday order is missing.",
   );
@@ -119,9 +123,6 @@ function App() {
     (order) => order.dueToday && order.status !== "delivered",
   );
   const openTasks = currentState.tasks.filter((task) => task.status === "open");
-  const lowStockProducts = currentState.products.filter(
-    (product) => product.stock <= product.threshold,
-  );
   const visibleOrders = currentState.orders.filter((order) => {
     if (selectedFilter === "Today") {
       return order.dueToday;
@@ -156,6 +157,7 @@ function App() {
       const nextState = await fetchState();
       setState(nextState);
       await refreshMorningInsights();
+      await refreshMemoryRecords();
     } catch (error) {
       setApiError(getErrorMessage(error));
     }
@@ -167,6 +169,10 @@ function App() {
     setMemoryStatus(response.memoryStatus);
     setLlmMode(response.llmMode);
     setInsightsGeneratedAt(response.generatedAt);
+  }
+
+  async function refreshMemoryRecords() {
+    setMemoryRecords(await fetchMemoryRecords());
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -206,6 +212,7 @@ function App() {
       ]);
       setMemoryStatus(response.status);
       await refreshMorningInsights();
+      await refreshMemoryRecords();
       prependActions([
         {
           id: crypto.randomUUID(),
@@ -231,6 +238,16 @@ function App() {
       const response = await createRestockDraft(alert.productId);
       setState(response.state);
       prependActions([response.action]);
+      openRestockDraft(response.state, alert.productId);
+    });
+  }
+
+  async function draftProduct(product: Product) {
+    await runMutation(async () => {
+      const response = await createRestockDraft(product.id);
+      setState(response.state);
+      prependActions([response.action]);
+      openRestockDraft(response.state, product.id);
     });
   }
 
@@ -254,6 +271,7 @@ function App() {
     await runMutation(async () => {
       setState(await resetDemoState());
       await refreshMorningInsights();
+      await refreshMemoryRecords();
       setActions([]);
       setMessages(initialMessages);
     });
@@ -294,6 +312,23 @@ function App() {
     ]);
   }
 
+  function openRestockDraft(nextState: OperationsState, productId: string) {
+    const product = nextState.products.find((item) => item.id === productId);
+    const alert = nextState.inventoryAlerts.find(
+      (item) => item.productId === productId,
+    );
+
+    if (!product || !alert?.restockDraft) {
+      return;
+    }
+
+    setDraftModal({
+      title: `Supplier Draft: ${product.name}`,
+      subtitle: product.supplier,
+      body: alert.restockDraft,
+    });
+  }
+
   async function copyDraft() {
     if (!draftModal) {
       return;
@@ -330,7 +365,7 @@ function App() {
             <Sparkles size={21} />
           </div>
           <div>
-            <strong>Orbio AI Ops</strong>
+            <strong>Merchant Memory</strong>
             <span>SME command center</span>
           </div>
         </div>
@@ -339,30 +374,35 @@ function App() {
           <button
             className={activePage === "dashboard" ? "active" : ""}
             type="button"
+            aria-label="Open dashboard page"
             onClick={() => setActivePage("dashboard")}>
             <Boxes size={18} /> Dashboard
           </button>
           <button
             className={activePage === "stock" ? "active" : ""}
             type="button"
+            aria-label="Open stock page"
             onClick={() => setActivePage("stock")}>
             <Warehouse size={18} /> Stock
           </button>
           <button
             className={activePage === "customers" ? "active" : ""}
             type="button"
+            aria-label="Open customers page"
             onClick={() => setActivePage("customers")}>
             <Users size={18} /> Customers
           </button>
           <button
             className={activePage === "orders" ? "active" : ""}
             type="button"
+            aria-label="Open orders page"
             onClick={() => setActivePage("orders")}>
             <ShoppingBag size={18} /> Orders
           </button>
           <button
             className={activePage === "memory" ? "active" : ""}
             type="button"
+            aria-label="Open memory page"
             onClick={() => setActivePage("memory")}>
             <History size={18} /> Memory
           </button>
@@ -377,6 +417,7 @@ function App() {
           <button
             className="ghost-button"
             type="button"
+            aria-label="Generate daily tasks"
             onClick={generateDailyPlan}
             disabled={isMutating}>
             <ClipboardList size={16} />
@@ -407,6 +448,7 @@ function App() {
             <button
               className="secondary-button"
               type="button"
+              aria-label="Reset demo state"
               onClick={resetDemo}
               disabled={isMutating}>
               <RefreshCw size={16} />
@@ -425,21 +467,21 @@ function App() {
                 icon={<ShoppingBag size={22} />}
                 label="Total active orders"
                 value={String(activeOrders.length)}
-                detail={`${dueToday.length} need action today`}
+                detail={`${dueToday.length} actions today`}
                 tone="green"
               />
               <MetricCard
                 icon={<AlertTriangle size={22} />}
                 label="Critical stock alerts"
                 value={String(criticalAlerts.length)}
-                detail={`${lowStockProducts.length} products below threshold`}
+                detail={`${activeAlerts.length} products need review`}
                 tone="orange"
               />
               <MetricCard
                 icon={<Users size={22} />}
                 label="Customers to follow up with"
                 value={String(followUpInsights.length)}
-                detail="missed usual ordering rhythm"
+                detail="rhythm broken"
                 tone="blue"
               />
             </section>
@@ -483,8 +525,8 @@ function App() {
         {activePage === "stock" ? (
           <StockPage
             products={state.products}
-            alerts={activeAlerts}
-            onDraft={resolveInventoryAlert}
+            alerts={state.inventoryAlerts}
+            onDraft={draftProduct}
             disabled={isMutating}
           />
         ) : null}
@@ -501,9 +543,12 @@ function App() {
         {activePage === "memory" ? (
           <MemoryPage
             insights={insights}
+            records={memoryRecords}
             memoryStatus={memoryStatus}
             llmMode={llmMode}
             generatedAt={insightsGeneratedAt}
+            search={memorySearch}
+            onSearchChange={setMemorySearch}
           />
         ) : null}
 
@@ -631,6 +676,7 @@ function App() {
                         </div>
                         <button
                           type="button"
+                          aria-label={`Notify customer about order ${shipment.orderId}`}
                           onClick={() => markShipmentNotified(shipment.orderId)}
                           disabled={isMutating}>
                           <UserRoundCheck size={16} />
@@ -701,6 +747,7 @@ function App() {
                   {starterMessages.map((message) => (
                     <button
                       type="button"
+                      aria-label={`Use starter message: ${message}`}
                       key={message}
                       onClick={() => setChatInput(message)}>
                       {message}
@@ -728,6 +775,7 @@ function App() {
                   className="chat-form"
                   onSubmit={handleSubmit}>
                   <input
+                    aria-label="Customer message"
                     value={chatInput}
                     onChange={(event) => setChatInput(event.target.value)}
                     placeholder="Customer message"
@@ -753,12 +801,14 @@ function App() {
                   className="memory-ingest-form"
                   onSubmit={handleMemoryIngest}>
                   <textarea
+                    aria-label="Memory note"
                     value={memoryInput}
                     onChange={(event) => setMemoryInput(event.target.value)}
                     placeholder="Business note, customer rhythm, supplier issue"
                   />
                   <button
                     type="submit"
+                    aria-label="Save note to memory"
                     disabled={isMutating}>
                     <ArrowUpRight size={16} />
                     Save to memory
@@ -845,7 +895,7 @@ function InsightCard({
         ? "Show WhatsApp Message"
         : insight.actionType === "suggest_shipping_alternative"
           ? "Show Alternative"
-          : "Show Draft";
+          : "Show Details";
 
   return (
     <article className={`insight-card ${insight.color}`}>
@@ -865,6 +915,7 @@ function InsightCard({
       </div>
       <button
         type="button"
+        aria-label={`${buttonLabel} for ${insight.entityName}`}
         onClick={onAction}>
         <ArrowUpRight size={16} />
         {buttonLabel}
@@ -886,6 +937,8 @@ function DraftDrawer({
   return (
     <aside
       className="draft-drawer"
+      role="dialog"
+      aria-modal="true"
       aria-label="Generated draft">
       <div className="draft-drawer-header">
         <div>
@@ -894,6 +947,7 @@ function DraftDrawer({
         </div>
         <button
           type="button"
+          aria-label="Close generated draft"
           onClick={onClose}>
           Close
         </button>
@@ -902,6 +956,7 @@ function DraftDrawer({
       <button
         className="copy-button"
         type="button"
+        aria-label="Copy generated draft"
         onClick={onCopy}>
         <Copy size={16} />
         Copy
@@ -918,7 +973,7 @@ function StockPage({
 }: {
   products: Product[];
   alerts: InventoryAlert[];
-  onDraft: (alert: InventoryAlert) => void;
+  onDraft: (product: Product) => void;
   disabled: boolean;
 }) {
   const alertsByProduct = new Map(
@@ -946,6 +1001,7 @@ function StockPage({
           const averageSales = average(product.weeklySales);
           const daysLeft = averageSales ? product.stock / averageSales : 0;
           const alert = alertsByProduct.get(product.id);
+          const canDraft = daysLeft <= 7;
           const tone =
             alert?.severity === "critical"
               ? "red"
@@ -970,20 +1026,27 @@ function StockPage({
               </span>
               <span>{daysLeft.toFixed(1)}</span>
               <StatusPill status={tone} />
-              {alert ? (
+              {canDraft ? (
                 <button
                   className="row-action-button"
                   type="button"
-                  onClick={() => onDraft(alert)}
+                  aria-label={`Create supplier draft for ${product.name}`}
+                  onClick={() => onDraft(product)}
                   disabled={disabled}>
                   Draft
                 </button>
               ) : (
-                <span>No action</span>
+                <span aria-label="No stock action needed" />
               )}
             </article>
           );
         })}
+        {!products.length ? (
+          <div className="empty-state">
+            <CheckCircle2 size={24} />
+            <span>No products in stock.</span>
+          </div>
+        ) : null}
       </div>
     </section>
   );
@@ -1074,12 +1137,38 @@ function CustomersPage({
             <span>{row.note}</span>
           </article>
         ))}
+        {!rows.length ? (
+          <div className="empty-state">
+            <CheckCircle2 size={24} />
+            <span>No customers found.</span>
+          </div>
+        ) : null}
       </div>
     </section>
   );
 }
 
 function OrdersPage({ state }: { state: OperationsState }) {
+  const [filter, setFilter] = useState("Today");
+  const visibleOrders = state.orders.filter((order) => {
+    if (filter === "Today") {
+      return order.dueToday;
+    }
+
+    if (filter === "Risk") {
+      const shipment = state.shipments.find(
+        (item) => item.orderId === order.id,
+      );
+      return (
+        order.status === "delayed" ||
+        shipment?.risk === "delayed" ||
+        shipment?.risk === "watch"
+      );
+    }
+
+    return true;
+  });
+
   return (
     <section className="page-panel">
       <div className="section-heading">
@@ -1087,16 +1176,22 @@ function OrdersPage({ state }: { state: OperationsState }) {
           <p className="eyebrow">Orders Page</p>
           <h2>Active orders and shipping notes</h2>
         </div>
+        <SegmentedControl
+          value={filter}
+          options={["Today", "Risk", "All"]}
+          onChange={setFilter}
+        />
       </div>
       <div className="data-table">
         <div className="data-table-header orders-grid">
           <span>Order</span>
           <span>Customer</span>
           <span>Status</span>
-          <span>Shipping company</span>
+          <span>Cargo</span>
+          <span>ETA</span>
           <span>Note</span>
         </div>
-        {state.orders.map((order) => {
+        {visibleOrders.map((order) => {
           const customer = state.customers.find(
             (item) => item.id === order.customerId,
           );
@@ -1112,10 +1207,17 @@ function OrdersPage({ state }: { state: OperationsState }) {
               <span>{customer?.name}</span>
               <StatusPill status={shipment?.risk ?? order.status} />
               <span>{shipment?.carrier ?? "Warehouse"}</span>
-              <span>{shipment?.lastScan ?? "Awaiting handoff"}</span>
+              <span>{shipment?.eta ?? "-"}</span>
+              <span>{shipment?.lastScan ?? "Waiting for delivery"}</span>
             </article>
           );
         })}
+        {!visibleOrders.length ? (
+          <div className="empty-state">
+            <CheckCircle2 size={24} />
+            <span>No orders in this view.</span>
+          </div>
+        ) : null}
       </div>
     </section>
   );
@@ -1123,17 +1225,41 @@ function OrdersPage({ state }: { state: OperationsState }) {
 
 function MemoryPage({
   insights,
+  records,
   memoryStatus,
   llmMode,
   generatedAt,
+  search,
+  onSearchChange,
 }: {
   insights: ProactiveInsight[];
+  records: MemoryRecord[];
   memoryStatus: MemoryStatus | null;
   llmMode: "gemini" | "fallback";
   generatedAt: string;
+  search: string;
+  onSearchChange: (value: string) => void;
 }) {
+  const normalizedSearch = search.trim().toLocaleLowerCase("tr");
+  const visibleRecords = records.filter((record) => {
+    if (!normalizedSearch) {
+      return true;
+    }
+
+    return [
+      record.text,
+      record.category,
+      record.entityName ?? "",
+      record.eventDate ?? "",
+    ]
+      .join(" ")
+      .toLocaleLowerCase("tr")
+      .includes(normalizedSearch);
+  });
+
   return (
-    <section className="page-panel">
+    <div className="memory-page">
+      <section className="page-panel">
       <div className="section-heading">
         <div>
           <p className="eyebrow">History / Memory Page</p>
@@ -1160,8 +1286,53 @@ function MemoryPage({
             </div>
           </article>
         ))}
+        {!insights.length ? (
+          <div className="empty-state">
+            <CheckCircle2 size={24} />
+            <span>No memory evidence yet.</span>
+          </div>
+        ) : null}
       </div>
-    </section>
+      </section>
+
+      <section className="page-panel">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Memory Store</p>
+            <h2>All Memory Records</h2>
+          </div>
+        </div>
+        <input
+          className="memory-search-input"
+          aria-label="Search memory records"
+          value={search}
+          onChange={(event) => onSearchChange(event.target.value)}
+          placeholder="Search memory..."
+        />
+        <div className="memory-record-list">
+          {visibleRecords.map((record) => (
+            <article
+              className="memory-record-card"
+              key={record.id}>
+              <header>
+                <div>
+                  <span className="memory-category">{record.category}</span>
+                  <strong>{record.entityName ?? "General memory"}</strong>
+                </div>
+                <time>{record.eventDate ?? "No date"}</time>
+              </header>
+              <p>{record.text}</p>
+            </article>
+          ))}
+          {!visibleRecords.length ? (
+            <div className="empty-state">
+              <CheckCircle2 size={24} />
+              <span>No memory records match this search.</span>
+            </div>
+          ) : null}
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -1207,6 +1378,7 @@ function SegmentedControl({
       {options.map((option) => (
         <button
           type="button"
+          aria-label={`Select ${option} filter`}
           className={value === option ? "active" : ""}
           key={option}
           onClick={() => onChange(option)}>
@@ -1255,6 +1427,7 @@ function InventoryRow({
       </div>
       <button
         type="button"
+        aria-label={`Create restock draft for ${product.name}`}
         onClick={onResolve}
         disabled={disabled}>
         Draft
@@ -1264,7 +1437,13 @@ function InventoryRow({
 }
 
 function StatusPill({ status }: { status: string }) {
-  return <span className={`status-pill ${status}`}>{status}</span>;
+  return (
+    <span
+      className={`status-pill ${status}`}
+      role="status">
+      {status}
+    </span>
+  );
 }
 
 function PriorityTag({ priority }: { priority: "low" | "medium" | "high" }) {

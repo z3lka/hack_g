@@ -44,6 +44,10 @@ export async function fetchMemoryStatus() {
   return request<MemoryStatus>("/memory/status");
 }
 
+export async function fetchMemoryRecords() {
+  return request<MemoryRecord[]>("/memory/records");
+}
+
 export async function seedMemory() {
   return request<MemoryStatus>("/memory/seed", { method: "POST" });
 }

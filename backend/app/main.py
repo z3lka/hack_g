@@ -6,13 +6,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from . import store
 from .agent import agent, create_chat_message
 from .insights import generate_morning_insights
-from .memory import ingest_memory, memory_status, seed_memory
+from .memory import ingest_memory, list_memory_records, memory_status, seed_memory
 from .models import (
     AgentAction,
     ChatRequest,
     ChatResponse,
+    InventoryAlert,
     MemoryIngestRequest,
     MemoryIngestResponse,
+    MemoryRecord,
     MemoryStatus,
     MorningInsightsResponse,
     OperationsState,
@@ -53,6 +55,11 @@ def read_state() -> OperationsState:
 @app.get("/api/memory/status", response_model=MemoryStatus)
 def read_memory_status() -> MemoryStatus:
     return memory_status()
+
+
+@app.get("/api/memory/records", response_model=list[MemoryRecord])
+def read_memory_records() -> list[MemoryRecord]:
+    return list_memory_records()
 
 
 @app.post("/api/memory/seed", response_model=MemoryStatus)
@@ -108,8 +115,25 @@ def create_restock_draft(product_id: str) -> StateActionResponse:
     product = next((item for item in state.products if item.id == product_id), None)
     alert = next((item for item in state.inventoryAlerts if item.productId == product_id), None)
 
-    if product is None or alert is None:
-        raise HTTPException(status_code=404, detail="Inventory alert not found")
+    if product is None:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    if alert is None:
+        average_demand = (
+            sum(product.weeklySales) / len(product.weeklySales)
+            if product.weeklySales
+            else 0
+        )
+        days_left = product.stock / average_demand if average_demand else 999
+        alert = InventoryAlert(
+            productId=product.id,
+            severity="critical" if days_left <= 2 else "warning",
+            message=(
+                f"{product.name} is projected to run out in {days_left:.1f} days."
+            ),
+            resolved=False,
+        )
+        state.inventoryAlerts.append(alert)
 
     alert.restockDraft = agent.suggest_restock(product_id, state)
     alert.resolved = True
