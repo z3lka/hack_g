@@ -3,6 +3,7 @@ from datetime import datetime
 from uuid import uuid4
 
 from .gemini_client import gemini_client
+from .memory import query_memory
 from .models import (
     AgentAction,
     AgentResult,
@@ -47,6 +48,20 @@ class OperationsAgent:
         recommended_quantity = max(
             product.threshold * 2 - product.stock, round(average_demand * 10)
         )
+        memory_records = query_memory(
+            f"{product.name} {product.supplier} supplier restock delivery",
+            limit=4,
+        )
+        prompt = self._build_supplier_draft_prompt(
+            product,
+            round(average_demand, 1),
+            recommended_quantity,
+            [record.text for record in memory_records],
+        )
+        response_text = gemini_client.generate_text(prompt)
+
+        if response_text:
+            return response_text.strip()
 
         return (
             f"Draft to {product.supplier}: Please prepare {recommended_quantity} {product.unit} "
@@ -149,6 +164,33 @@ CUSTOMERS:
 {customer_lines}
 
 Reply with a single short paragraph. No bullet points, no markdown.
+""".strip()
+
+    def _build_supplier_draft_prompt(
+        self,
+        product: Product,
+        average_demand: float,
+        recommended_quantity: int,
+        memory_records: list[str],
+    ) -> str:
+        memory_context = "\n".join(f"- {record}" for record in memory_records)
+        return f"""
+You are an AI operations assistant for a Turkish SME.
+Prepare a ready-to-send supplier email draft in Turkish.
+Do not invent details beyond the data below.
+Do not add placeholder names, placeholder signatures, markdown, or commentary.
+Return only the email text, including a subject line.
+
+Product:
+- Name: {product.name}
+- Current stock: {product.stock} {product.unit}
+- Reorder threshold: {product.threshold} {product.unit}
+- Average daily sales: {average_demand} {product.unit}
+- Supplier: {product.supplier}
+- Recommended quantity: {recommended_quantity} {product.unit}
+
+Relevant business memory:
+{memory_context or "- No extra memory records found."}
 """.strip()
 
     def _fallback_reply(

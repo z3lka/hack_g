@@ -265,10 +265,40 @@ _state = deepcopy(INITIAL_STATE)
 
 
 def get_state() -> OperationsState:
+    sync_inventory_alerts(_state)
     return _state
 
 
 def reset_state() -> OperationsState:
     global _state
     _state = deepcopy(INITIAL_STATE)
+    sync_inventory_alerts(_state)
     return _state
+
+
+def sync_inventory_alerts(state: OperationsState) -> None:
+    existing_product_ids = {alert.productId for alert in state.inventoryAlerts}
+
+    for product in state.products:
+        if product.stock > product.threshold or product.id in existing_product_ids:
+            continue
+
+        average_demand = (
+            sum(product.weeklySales) / len(product.weeklySales)
+            if product.weeklySales
+            else 0
+        )
+        days_left = product.stock / average_demand if average_demand else 999
+        severity = "critical" if days_left <= 2 else "warning"
+        state.inventoryAlerts.append(
+            InventoryAlert(
+                productId=product.id,
+                severity=severity,
+                message=(
+                    f"{product.name} is below its reorder threshold. "
+                    f"Current stock is {product.stock} {product.unit}; "
+                    f"estimated coverage is {days_left:.1f} days."
+                ),
+                resolved=False,
+            )
+        )

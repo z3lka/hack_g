@@ -122,9 +122,6 @@ function App() {
   const lowStockProducts = currentState.products.filter(
     (product) => product.stock <= product.threshold,
   );
-  const overnightOrders = currentState.orders.filter((order) =>
-    order.createdAt.includes("2026-05-10"),
-  );
   const visibleOrders = currentState.orders.filter((order) => {
     if (selectedFilter === "Today") {
       return order.dueToday;
@@ -143,6 +140,15 @@ function App() {
 
     return true;
   });
+  const activeOrders = currentState.orders.filter(
+    (order) => order.status !== "delivered",
+  );
+  const criticalAlerts = activeAlerts.filter(
+    (alert) => alert.severity === "critical",
+  );
+  const followUpInsights = insights.filter(
+    (insight) => insight.actionType === "create_customer_reminder_draft",
+  );
 
   async function loadState() {
     try {
@@ -418,21 +424,21 @@ function App() {
               <MetricCard
                 icon={<ShoppingBag size={22} />}
                 label="Total active orders"
-                value="24"
+                value={String(activeOrders.length)}
                 detail={`${dueToday.length} need action today`}
                 tone="green"
               />
               <MetricCard
                 icon={<AlertTriangle size={22} />}
                 label="Critical stock alerts"
-                value="3"
-                detail="products need review"
+                value={String(criticalAlerts.length)}
+                detail={`${lowStockProducts.length} products below threshold`}
                 tone="orange"
               />
               <MetricCard
                 icon={<Users size={22} />}
                 label="Customers to follow up with"
-                value="2"
+                value={String(followUpInsights.length)}
                 detail="missed usual ordering rhythm"
                 tone="blue"
               />
@@ -475,10 +481,20 @@ function App() {
         ) : null}
 
         {activePage === "stock" ? (
-          <StockPage products={state.products} />
+          <StockPage
+            products={state.products}
+            alerts={activeAlerts}
+            onDraft={resolveInventoryAlert}
+            disabled={isMutating}
+          />
         ) : null}
 
-        {activePage === "customers" ? <CustomersPage /> : null}
+        {activePage === "customers" ? (
+          <CustomersPage
+            state={state}
+            insights={insights}
+          />
+        ) : null}
 
         {activePage === "orders" ? <OrdersPage state={state} /> : null}
 
@@ -486,6 +502,8 @@ function App() {
           <MemoryPage
             insights={insights}
             memoryStatus={memoryStatus}
+            llmMode={llmMode}
+            generatedAt={insightsGeneratedAt}
           />
         ) : null}
 
@@ -807,6 +825,7 @@ function MemoryStatusBadge({
       <small>
         {llmMode === "gemini" ? "Gemini live" : "Deterministic fallback"}
         {generatedAt ? ` - ${formatGeneratedAt(generatedAt)}` : ""}
+        {status ? ` - ${status.embeddingBackend} embeddings` : ""}
       </small>
     </div>
   );
@@ -891,7 +910,21 @@ function DraftDrawer({
   );
 }
 
-function StockPage({ products }: { products: Product[] }) {
+function StockPage({
+  products,
+  alerts,
+  onDraft,
+  disabled,
+}: {
+  products: Product[];
+  alerts: InventoryAlert[];
+  onDraft: (alert: InventoryAlert) => void;
+  disabled: boolean;
+}) {
+  const alertsByProduct = new Map(
+    alerts.map((alert) => [alert.productId, alert]),
+  );
+
   return (
     <section className="page-panel">
       <div className="section-heading">
@@ -907,12 +940,22 @@ function StockPage({ products }: { products: Product[] }) {
           <span>Daily sales</span>
           <span>Days left</span>
           <span>Status</span>
+          <span>Action</span>
         </div>
         {products.map((product) => {
           const averageSales = average(product.weeklySales);
           const daysLeft = averageSales ? product.stock / averageSales : 0;
+          const alert = alertsByProduct.get(product.id);
           const tone =
-            daysLeft <= 2 ? "red" : daysLeft <= 7 ? "yellow" : "green";
+            alert?.severity === "critical"
+              ? "red"
+              : alert
+                ? "yellow"
+                : daysLeft <= 2
+                  ? "red"
+                  : daysLeft <= 7
+                    ? "yellow"
+                    : "green";
 
           return (
             <article
@@ -927,6 +970,17 @@ function StockPage({ products }: { products: Product[] }) {
               </span>
               <span>{daysLeft.toFixed(1)}</span>
               <StatusPill status={tone} />
+              {alert ? (
+                <button
+                  className="row-action-button"
+                  type="button"
+                  onClick={() => onDraft(alert)}
+                  disabled={disabled}>
+                  Draft
+                </button>
+              ) : (
+                <span>No action</span>
+              )}
             </article>
           );
         })}
@@ -935,30 +989,60 @@ function StockPage({ products }: { products: Product[] }) {
   );
 }
 
-function CustomersPage() {
-  const rows = [
-    {
-      name: "Ahmet Bey",
-      lastOrder: "2026-05-01",
-      frequency: "Every Monday",
-      status: "risky",
-      note: "No order this Monday",
-    },
-    {
-      name: "Mina Yilmaz",
-      lastOrder: "2026-05-10",
-      frequency: "Every 2 weeks",
-      status: "healthy",
-      note: "Order 128 shipped",
-    },
-    {
-      name: "North Pier Cafe",
-      lastOrder: "2026-05-09",
-      frequency: "Weekly",
-      status: "watch",
-      note: "Shipment delay risk",
-    },
-  ];
+function CustomersPage({
+  state,
+  insights,
+}: {
+  state: OperationsState;
+  insights: ProactiveInsight[];
+}) {
+  const followUpInsights = insights.filter(
+    (insight) => insight.actionType === "create_customer_reminder_draft",
+  );
+  const rows = state.customers.map((customer) => {
+    const customerOrders = state.orders
+      .filter((order) => order.customerId === customer.id)
+      .sort(
+        (left, right) =>
+          new Date(right.createdAt).getTime() -
+          new Date(left.createdAt).getTime(),
+      );
+    const latestOrder = customerOrders[0];
+    const riskyShipment = state.shipments.find((shipment) => {
+      const order = customerOrders.find((item) => item.id === shipment.orderId);
+      return order && shipment.risk !== "clear" && !shipment.notified;
+    });
+    const followUpInsight = followUpInsights.find((insight) =>
+      namesMatch(insight.entityName, customer.name),
+    );
+    const status = followUpInsight
+      ? "risky"
+      : riskyShipment
+        ? "watch"
+        : "healthy";
+    const frequency = followUpInsight
+      ? "Memory rhythm changed"
+      : customerOrders.length > 1
+        ? `${customerOrders.length} recent orders`
+        : "No pattern yet";
+    const note =
+      followUpInsight?.summary ??
+      (riskyShipment
+        ? `Shipping risk on order ${riskyShipment.orderId}`
+        : latestOrder
+          ? `Latest order ${latestOrder.id} is ${latestOrder.status}`
+          : "No order history yet");
+
+    return {
+      id: customer.id,
+      name: customer.name,
+      lastOrder: latestOrder ? formatDate(latestOrder.createdAt) : "No orders",
+      frequency,
+      status,
+      note,
+      channel: customer.channel,
+    };
+  });
 
   return (
     <section className="page-panel">
@@ -972,17 +1056,20 @@ function CustomersPage() {
         <div className="data-table-header customer-grid">
           <span>Customer</span>
           <span>Last order</span>
-          <span>Frequency</span>
+          <span>Channel</span>
           <span>Status</span>
           <span>Reason</span>
         </div>
         {rows.map((row) => (
           <article
             className="data-table-row customer-grid"
-            key={row.name}>
-            <strong>{row.name}</strong>
+            key={row.id}>
+            <strong>
+              {row.name}
+              <small>{row.frequency}</small>
+            </strong>
             <span>{row.lastOrder}</span>
-            <span>{row.frequency}</span>
+            <span>{row.channel}</span>
             <StatusPill status={row.status} />
             <span>{row.note}</span>
           </article>
@@ -1037,9 +1124,13 @@ function OrdersPage({ state }: { state: OperationsState }) {
 function MemoryPage({
   insights,
   memoryStatus,
+  llmMode,
+  generatedAt,
 }: {
   insights: ProactiveInsight[];
   memoryStatus: MemoryStatus | null;
+  llmMode: "gemini" | "fallback";
+  generatedAt: string;
 }) {
   return (
     <section className="page-panel">
@@ -1050,8 +1141,8 @@ function MemoryPage({
         </div>
         <MemoryStatusBadge
           status={memoryStatus}
-          llmMode="fallback"
-          generatedAt=""
+          llmMode={llmMode}
+          generatedAt={generatedAt}
         />
       </div>
       <div className="memory-explain-list">
@@ -1237,6 +1328,19 @@ function formatGeneratedAt(value: string) {
   }).format(date);
 }
 
+function formatDate(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "2-digit",
+  }).format(date);
+}
+
 function summarizeOrderItems(order: Order, state: OperationsState) {
   return order.items
     .map((item) => {
@@ -1246,6 +1350,20 @@ function summarizeOrderItems(order: Order, state: OperationsState) {
       return `${item.quantity}x ${product?.name ?? "Unknown product"}`;
     })
     .join(", ");
+}
+
+function namesMatch(left: string, right: string) {
+  const normalize = (value: string) =>
+    value
+      .toLocaleLowerCase("tr")
+      .replace(/[^a-z0-9ğüşöçıİ\s]/gi, "")
+      .trim();
+  const normalizedLeft = normalize(left);
+  const normalizedRight = normalize(right);
+  return (
+    normalizedLeft.includes(normalizedRight) ||
+    normalizedRight.includes(normalizedLeft)
+  );
 }
 
 function getErrorMessage(error: unknown) {

@@ -21,6 +21,7 @@ ActionType = Literal[
 ]
 InsightColor = Literal["red", "yellow", "orange", "green"]
 MemoryCategory = Literal["inventory", "customer", "supplier", "shipping", "product", "note"]
+EmbeddingBackend = Literal["gemini", "sentence-transformers", "hash"]
 
 
 class Product(BaseModel):
@@ -155,6 +156,8 @@ class MemoryStatus(BaseModel):
     persistPath: str
     collectionName: str
     seeded: bool
+    embeddingBackend: EmbeddingBackend
+    embeddingModel: str
     error: str | None = None
 
 

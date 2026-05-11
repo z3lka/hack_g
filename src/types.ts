@@ -125,6 +125,8 @@ export type MemoryStatus = {
   persistPath: string;
   collectionName: string;
   seeded: boolean;
+  embeddingBackend: "gemini" | "sentence-transformers" | "hash";
+  embeddingModel: string;
   error?: string | null;
 };
 

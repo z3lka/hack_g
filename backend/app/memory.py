@@ -3,12 +3,29 @@ import os
 import re
 from uuid import uuid4
 
+from .gemini_client import gemini_client
 from .models import MemoryRecord, MemoryRecordInput, MemoryStatus
 
 
-COLLECTION_NAME = "business_memory"
-PERSIST_PATH = os.getenv("CHROMA_PATH", "./chroma_store")
-EMBEDDING_DIMENSIONS = 96
+def _slug(value: str) -> str:
+    cleaned = re.sub(r"[^a-zA-Z0-9._-]+", "_", value).strip("._-").lower()
+    return cleaned or "default"
+
+
+COLLECTION_BASE_NAME = os.getenv("CHROMA_COLLECTION_NAME", "business_memory")
+PERSIST_PATH = os.getenv("CHROMA_DB_PATH") or os.getenv("CHROMA_PATH", "./chroma_store")
+EMBEDDING_DIMENSIONS = int(os.getenv("EMBEDDING_DIMENSIONS", "768"))
+SENTENCE_TRANSFORMER_MODEL = os.getenv(
+    "SENTENCE_TRANSFORMER_MODEL", "all-MiniLM-L6-v2"
+)
+COLLECTION_NAME = "_".join(
+    [
+        _slug(COLLECTION_BASE_NAME),
+        "gemini" if gemini_client.available else "local",
+        _slug(gemini_client.embedding_model if gemini_client.available else "hash"),
+        str(EMBEDDING_DIMENSIONS),
+    ]
+)
 
 DEMO_MEMORY: list[MemoryRecordInput] = [
     MemoryRecordInput(
@@ -71,6 +88,12 @@ DEMO_MEMORY: list[MemoryRecordInput] = [
 
 _fallback_records: list[MemoryRecord] = []
 _last_error: str | None = None
+_last_embedding_error: str | None = None
+_last_embedding_backend = "gemini" if gemini_client.available else "hash"
+_last_embedding_model = (
+    gemini_client.embedding_model if gemini_client.available else "deterministic-hash"
+)
+_sentence_transformer = None
 
 
 def memory_status() -> MemoryStatus:
@@ -83,7 +106,9 @@ def memory_status() -> MemoryStatus:
             persistPath=PERSIST_PATH,
             collectionName=COLLECTION_NAME,
             seeded=bool(_fallback_records),
-            error=_last_error,
+            embeddingBackend=_last_embedding_backend,  # type: ignore[arg-type]
+            embeddingModel=_last_embedding_model,
+            error=_last_error or _last_embedding_error,
         )
 
     return MemoryStatus(
@@ -92,6 +117,9 @@ def memory_status() -> MemoryStatus:
         persistPath=PERSIST_PATH,
         collectionName=COLLECTION_NAME,
         seeded=collection.count() > 0,
+        embeddingBackend=_last_embedding_backend,  # type: ignore[arg-type]
+        embeddingModel=_last_embedding_model,
+        error=_last_embedding_error,
     )
 
 
@@ -139,7 +167,7 @@ def query_memory(query: str, limit: int = 8) -> list[MemoryRecord]:
         return _query_fallback(query, limit)
 
     result = collection.query(
-        query_embeddings=[embed_text(query)],
+        query_embeddings=[embed_text(query, task_type="RETRIEVAL_QUERY")],
         n_results=limit,
         include=["documents", "metadatas"],
     )
@@ -172,7 +200,53 @@ def query_memory_for_morning() -> list[MemoryRecord]:
     return records
 
 
-def embed_text(text: str) -> list[float]:
+def embed_text(text: str, task_type: str = "RETRIEVAL_DOCUMENT") -> list[float]:
+    vector = _embed_with_gemini(text, task_type)
+    if vector is not None:
+        return vector
+
+    vector = _embed_with_sentence_transformers(text)
+    if vector is not None:
+        return vector
+
+    return _hash_embedding(text)
+
+
+def _embed_with_gemini(text: str, task_type: str) -> list[float] | None:
+    if not gemini_client.available:
+        return None
+
+    vector = gemini_client.generate_embedding(
+        text,
+        task_type=task_type,
+        dimensions=EMBEDDING_DIMENSIONS,
+    )
+    if vector is None:
+        _set_embedding_error(gemini_client.last_error)
+        return None
+
+    _set_embedding_backend("gemini", gemini_client.embedding_model)
+    return _fit_dimensions(vector)
+
+
+def _embed_with_sentence_transformers(text: str) -> list[float] | None:
+    global _sentence_transformer
+
+    try:
+        if _sentence_transformer is None:
+            from sentence_transformers import SentenceTransformer
+
+            _sentence_transformer = SentenceTransformer(SENTENCE_TRANSFORMER_MODEL)
+
+        vector = _sentence_transformer.encode(text).tolist()
+    except Exception:
+        return None
+
+    _set_embedding_backend("sentence-transformers", SENTENCE_TRANSFORMER_MODEL)
+    return _fit_dimensions(vector)
+
+
+def _hash_embedding(text: str) -> list[float]:
     vector = [0.0] * EMBEDDING_DIMENSIONS
     tokens = re.findall(r"[a-zA-Z0-9]+", text.lower())
 
@@ -186,7 +260,33 @@ def embed_text(text: str) -> list[float]:
     if norm == 0:
         return vector
 
+    _set_embedding_backend("hash", "deterministic-hash")
     return [value / norm for value in vector]
+
+
+def _fit_dimensions(vector: list[float]) -> list[float]:
+    fitted = vector[:EMBEDDING_DIMENSIONS]
+    if len(fitted) < EMBEDDING_DIMENSIONS:
+        fitted = [*fitted, *([0.0] * (EMBEDDING_DIMENSIONS - len(fitted)))]
+
+    norm = sum(value * value for value in fitted) ** 0.5
+    if norm == 0:
+        return fitted
+
+    return [value / norm for value in fitted]
+
+
+def _set_embedding_backend(backend: str, model: str) -> None:
+    global _last_embedding_backend, _last_embedding_model, _last_embedding_error
+    _last_embedding_backend = backend
+    _last_embedding_model = model
+    _last_embedding_error = None
+
+
+def _set_embedding_error(error: str | None) -> None:
+    global _last_embedding_error
+    if error:
+        _last_embedding_error = error
 
 
 def _get_client():
@@ -209,7 +309,14 @@ def _get_collection():
         return None
 
     try:
-        return client.get_or_create_collection(name=COLLECTION_NAME, metadata={"hnsw:space": "cosine"})
+        return client.get_or_create_collection(
+            name=COLLECTION_NAME,
+            metadata={
+                "hnsw:space": "cosine",
+                "embedding_dimensions": EMBEDDING_DIMENSIONS,
+                "embedding_model": _last_embedding_model,
+            },
+        )
     except Exception as exc:  # pragma: no cover - Chroma version/config fallback.
         global _last_error
         _last_error = str(exc)
@@ -265,7 +372,7 @@ def _record_from_chroma(record_id: str, document: str, metadata: dict[str, str |
 
 
 def _query_fallback(query: str, limit: int) -> list[MemoryRecord]:
-    query_vector = embed_text(query)
+    query_vector = embed_text(query, task_type="RETRIEVAL_QUERY")
 
     def score(record: MemoryRecord) -> float:
         record_vector = embed_text(record.text)

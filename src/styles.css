@@ -547,8 +547,16 @@ h3 {
   color: #4c5952;
 }
 
+.data-table-row strong small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .stock-grid {
-  grid-template-columns: minmax(160px, 1.4fr) 1fr 1fr 0.7fr 0.7fr;
+  grid-template-columns: minmax(160px, 1.4fr) 1fr 1fr 0.7fr 0.7fr 0.7fr;
 }
 
 .customer-grid {
@@ -557,6 +565,15 @@ h3 {
 
 .orders-grid {
   grid-template-columns: 0.6fr 1.2fr 0.8fr 1.2fr minmax(200px, 1.8fr);
+}
+
+.row-action-button {
+  min-height: 34px;
+  border: 1px solid rgba(34, 104, 64, 0.28);
+  border-radius: 8px;
+  background: #edf8f1;
+  color: #1f5c38;
+  font-weight: 800;
 }
 
 .memory-explain-list {

@@ -22,7 +22,7 @@ The prototype uses two AI layers:
 1. A memory/RAG layer that retrieves historical business events from ChromaDB and sends them to Gemini.
 2. A deterministic operational agent that keeps order lookup, stock checks, and task generation reliable during the demo.
 
-When `GEMINI_API_KEY` is available, `/api/insights/morning` asks Gemini to produce structured insight cards. Without a key, the backend returns deterministic fallback insights using the same ChromaDB evidence.
+When `GEMINI_API_KEY` is available, `/api/insights/morning` asks Gemini to produce structured insight cards and ChromaDB uses Gemini embeddings for memory search. Without a key, the backend returns deterministic fallback insights and local hash embeddings using the same memory records.
 
 - `lookupOrderStatus(orderId)`
 - `checkStock(productId)`
@@ -31,13 +31,13 @@ When `GEMINI_API_KEY` is available, `/api/insights/morning` asks Gemini to produ
 - `generateCustomerReply(message, context)`
 - `createDailyTaskPlan()`
 
-The Gemini integration uses `google-genai` and defaults to `gemini-2.5-flash`. Set `GEMINI_MODEL` to change it.
+The Gemini integration uses `google-genai` and defaults to `gemini-2.5-flash`. Set `GEMINI_MODEL` to change it. Memory search defaults to `GEMINI_EMBEDDING_MODEL=gemini-embedding-001`; set it to `text-embedding-004` only if that model is available for your key.
 
 ## Architecture
 
 - `backend/app/main.py`: FastAPI routes for state, chat, task generation, inventory drafts, and shipping notifications.
 - `backend/app/agent.py`: Python agent runtime, customer reply generation, and operational tools.
-- `backend/app/memory.py`: ChromaDB persistent memory, deterministic embeddings, seed data, and retrieval.
+- `backend/app/memory.py`: ChromaDB persistent memory, Gemini embeddings with local fallbacks, seed data, and retrieval.
 - `backend/app/insights.py`: RAG prompt construction, Gemini/fallback insight generation, and insight actions.
 - `backend/app/gemini_client.py`: Gemini API wrapper.
 - `backend/app/store.py`: in-memory demo state for products, orders, customers, shipments, alerts, and tasks.
@@ -69,6 +69,8 @@ Optional Gemini setup:
 ```bash
 export GEMINI_API_KEY="your-key"
 export GEMINI_MODEL="gemini-2.5-flash"
+export GEMINI_EMBEDDING_MODEL="gemini-embedding-001"
+export CHROMA_DB_PATH="./chroma_store"
 ```
 
 Start the frontend in a second terminal:
