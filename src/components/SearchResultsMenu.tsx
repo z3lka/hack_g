@@ -78,6 +78,7 @@ function searchResultIcon(kind: SearchResultKind): ReactNode {
     customer: <Users size={15} />,
     order: <ShoppingBag size={15} />,
     shipment: <Truck size={15} />,
+    issue: <AlertTriangle size={15} />,
     message: <MessageSquareText size={15} />,
     alert: <AlertTriangle size={15} />,
     task: <ClipboardList size={15} />,

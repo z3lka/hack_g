@@ -18,6 +18,7 @@ export const searchKindOrder: SearchResultKind[] = [
   "customer",
   "order",
   "shipment",
+  "issue",
   "message",
   "alert",
   "task",
@@ -30,6 +31,7 @@ export const searchKindLabels: Record<SearchResultKind, string> = {
   customer: "Müşteriler",
   order: "Siparişler",
   shipment: "Takip",
+  issue: "Operasyon Hataları",
   message: "Mesajlar",
   alert: "Stok Uyarıları",
   task: "Görevler",
@@ -154,6 +156,22 @@ export function buildGlobalSearchResults({
         page: "orders",
         ordersFilter: shipment.risk === "clear" ? "Tümü" : "Risk",
       },
+    });
+  });
+
+  state.issues.forEach((issue) => {
+    add({
+      id: `issue-${issue.id}`,
+      kind: "issue",
+      title: issue.title,
+      description: issue.message,
+      meta: `${issue.severity} · ${issue.source}`,
+      keywords: [
+        "hata error issue problem uyarı warning operasyon",
+        issue.category,
+        issue.entityId ?? "",
+      ],
+      target: { type: "page", page: "dashboard" },
     });
   });
 

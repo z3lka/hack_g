@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 
-from . import memory
+from . import memory, store
 from .gemini_client import gemini_client
 from .models import (
     AgentAction,
@@ -46,8 +46,9 @@ def _build_prompt(state: OperationsState, records: list[MemoryRecord]) -> str:
 
     product_snapshot = "\n".join(
         f"- {p.name}: stock={p.stock} {p.unit}, threshold={p.threshold}, "
-        f"avg_daily_sales={round(sum(p.weeklySales)/len(p.weeklySales), 1)} {p.unit}/day, "
-        f"days_left={round(p.stock / (sum(p.weeklySales)/len(p.weeklySales)), 1) if sum(p.weeklySales) > 0 else 'N/A'}, "
+        f"avg_daily_sales={round(store.average_daily_sales(p), 1)} {p.unit}/day, "
+        f"remaining_days={store.remaining_days(p)}, "
+        f"severity={store.inventory_severity(p) or 'healthy'}, "
         f"supplier={p.supplier}"
         for p in state.products
     )
@@ -60,6 +61,13 @@ def _build_prompt(state: OperationsState, records: list[MemoryRecord]) -> str:
     shipment_snapshot = "\n".join(
         f"- Order {s.orderId}: carrier={s.carrier}, risk={s.risk}, eta={s.eta}, lastScan={s.lastScan}"
         for s in state.shipments
+    )
+
+    issue_snapshot = "\n".join(
+        f"- {issue.title}: severity={issue.severity}, category={issue.category}, "
+        f"source={issue.source}, entityId={issue.entityId or 'N/A'}, message={issue.message}"
+        for issue in state.issues
+        if not issue.resolved
     )
 
     memory_context = "\n".join(f"- {r.text}" for r in records)
@@ -106,6 +114,9 @@ ORDERS:
 SHIPMENTS:
 {shipment_snapshot}
 
+OPEN ISSUES:
+{issue_snapshot or "- No open operational issues."}
+
 Retrieved memory records:
 {memory_context}
 """.strip()
@@ -149,6 +160,17 @@ def _insights_from_payload(payload: dict | None) -> list[ProactiveInsight]:
 def _fallback_insights(records: list[MemoryRecord]) -> list[ProactiveInsight]:
     return [
         ProactiveInsight(
+            id="fallback-olive-oil",
+            color="red",
+            entityName="Zeytinyağı Hediye Seti",
+            title="Zeytinyağı Kritik Stok",
+            summary="Zeytinyağı hediye seti stoğu 18 set ve günlük ortalama satış 17 set; yaklaşık 2 günlük stok kaldı.",
+            evidence=_evidence(records, "Olive Oil"),
+            draftAction="Konu: Acil Zeytinyağı Hediye Seti Siparişi\n\nMerhaba Ege Tarım A.Ş.,\n\nZeytinyağı Hediye Seti stoğumuz 18 set seviyesine düştü. Günlük ortalama satışımız yaklaşık 17 set olduğu için acil tedarik yenilemesi yapmak istiyoruz. Bu hafta için 170 set uygunluk ve teslim tarihi paylaşabilir misiniz?",
+            actionType="create_supplier_order_draft",
+            confidence=0.92,
+        ),
+        ProactiveInsight(
             id="fallback-tomatoes",
             color="red",
             entityName="Domates",
@@ -181,17 +203,6 @@ def _fallback_insights(records: list[MemoryRecord]) -> list[ProactiveInsight]:
             draftAction="Alternatif öneri: Bu hafta bölgesel teslimatlar için Firma Y kullanılsın. Son 6 siparişte zamanında teslim gerçekleştirdi.",
             actionType="suggest_shipping_alternative",
             confidence=0.84,
-        ),
-        ProactiveInsight(
-            id="fallback-olive-oil",
-            color="green",
-            entityName="Zeytinyağı",
-            title="Zeytinyağı: Stok Yeterli",
-            summary="Zeytinyağı talebi stabil, mevcut stok yaklaşık 3 hafta yeterli.",
-            evidence=_evidence(records, "Olive Oil"),
-            draftAction="Şu an aksiyon gerekmiyor. Zeytinyağı stokunu önümüzdeki Pazartesi tekrar kontrol et.",
-            actionType="memory_insight_generated",
-            confidence=0.91,
         ),
     ]
 

@@ -22,16 +22,27 @@ class GeminiClient:
     def available(self) -> bool:
         return bool(self.api_key)
 
-    def generate_json(self, prompt: str) -> dict | None:
+    def generate_json(
+        self, prompt: str, response_schema: dict | None = None
+    ) -> dict | None:
         if not self.api_key:
             self.last_error = "GEMINI_API_KEY is not set."
             return None
 
         try:
             from google import genai
+            from google.genai import types
 
             client = genai.Client(api_key=self.api_key)
-            response = client.models.generate_content(model=self.model, contents=prompt)
+            config = types.GenerateContentConfig(
+                responseMimeType="application/json",
+                responseSchema=response_schema,
+            )
+            response = client.models.generate_content(
+                model=self.model,
+                contents=prompt,
+                config=config,
+            )
             text = getattr(response, "text", "") or ""
             return _parse_json(text)
         except Exception as exc:  # pragma: no cover - network/API fallback.

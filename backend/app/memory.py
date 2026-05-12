@@ -79,8 +79,71 @@ DEMO_MEMORY: list[MemoryRecordInput] = [
         category="product",
         entityName="Olive Oil",
         eventDate="2025-05-09",
-        text="Olive Oil demand is stable. Current stock usually covers 3 weeks, so no purchase action is needed.",
-        metadata={"coverageWeeks": 3, "severity": "green"},
+        text="Olive Oil gift sets sold faster after corporate gift orders. Current stock below 20 sets usually needs same-day supplier confirmation.",
+        metadata={"coverageDays": 2, "severity": "red", "supplier": "Ege Tarım A.Ş."},
+    ),
+    MemoryRecordInput(
+        category="supplier",
+        entityName="Ege Tarım A.Ş.",
+        eventDate="2026-05-06",
+        text="Ege Tarım A.Ş. can ship olive oil gift sets next morning if the purchase email is sent before 14:00.",
+        metadata={"supplier": "Ege Tarım A.Ş.", "cutoffHour": 14},
+    ),
+    MemoryRecordInput(
+        category="inventory",
+        entityName="Fig Jam",
+        eventDate="2026-05-05",
+        text="Fig jam sold 29 jars in one day after a cafe bundle campaign. Supplier needs 2 days lead time above 120 jars.",
+        metadata={"severity": "red", "supplier": "Selçuk Mutfağı"},
+    ),
+    MemoryRecordInput(
+        category="inventory",
+        entityName="Sage",
+        eventDate="2026-05-07",
+        text="Sage bundles repeatedly dip below 20 units before weekend herbal tea orders. Bozdağ supplier prefers WhatsApp confirmation.",
+        metadata={"severity": "orange", "supplier": "Bozdağ Yayla Ürünleri"},
+    ),
+    MemoryRecordInput(
+        category="supplier",
+        entityName="Hatay Lezzetleri",
+        eventDate="2026-05-03",
+        text="Hatay Lezzetleri needs 48 hours for nar ekşisi restocks during festival weeks.",
+        metadata={"leadTimeHours": 48, "product": "Nar Ekşisi"},
+    ),
+    MemoryRecordInput(
+        category="customer",
+        entityName="Arda Market",
+        eventDate="2026-05-06",
+        text="Arda Market usually accepts split shipments if the first box is handed to cargo before 16:00.",
+        metadata={"channel": "Email", "preference": "splitShipment"},
+    ),
+    MemoryRecordInput(
+        category="customer",
+        entityName="Lotus Vegan Cafe",
+        eventDate="2026-05-01",
+        text="Lotus Vegan Cafe gets sensitive to late payment confirmation messages and prefers a short WhatsApp update.",
+        metadata={"channel": "WhatsApp", "severity": "yellow"},
+    ),
+    MemoryRecordInput(
+        category="shipping",
+        entityName="DHL eCommerce",
+        eventDate="2026-05-08",
+        text="DHL eCommerce had two Antalya delays last week when pickup was after 17:00.",
+        metadata={"city": "Antalya", "lateDeliveries": 2},
+    ),
+    MemoryRecordInput(
+        category="shipping",
+        entityName="Kolay Gelsin",
+        eventDate="2026-05-09",
+        text="Kolay Gelsin requires hotel receiving-hour confirmation for Antalya deliveries.",
+        metadata={"city": "Antalya", "requirement": "receivingHours"},
+    ),
+    MemoryRecordInput(
+        category="note",
+        entityName="Marketplace Sync",
+        eventDate="2026-05-11",
+        text="Marketplace stock sync errors caused overselling once when critical SKUs were not frozen within an hour.",
+        metadata={"severity": "red", "system": "Marketplace Sync"},
     ),
 ]
 
@@ -202,7 +265,8 @@ def query_memory_for_morning() -> list[MemoryRecord]:
         "Tomatoes run out every Friday current stock 8 kg average daily sales 15 kg Mehmet Bey",
         "Ahmet Bey Monday order last 6 weeks today Wednesday WhatsApp reminder",
         "Shipping Company X average 2 days delayed last 3 orders Company Y",
-        "Olive Oil stock sufficient 3 weeks",
+        "Olive Oil gift set current stock below 20 daily sales 17 supplier Ege Tarım",
+        "Marketplace stock sync errors overselling critical SKUs",
     ]
     records: list[MemoryRecord] = []
     seen: set[str] = set()

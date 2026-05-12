@@ -10,6 +10,8 @@ Priority = Literal["low", "medium", "high"]
 ActionType = Literal[
     "lookup_order",
     "check_stock",
+    "check_errors",
+    "summarize_operations",
     "notify_customer",
     "create_restock_draft",
     "create_task_plan",
@@ -22,6 +24,8 @@ ActionType = Literal[
 InsightColor = Literal["red", "yellow", "orange", "green"]
 MemoryCategory = Literal["inventory", "customer", "supplier", "shipping", "product", "note"]
 EmbeddingBackend = Literal["gemini", "sentence-transformers", "hash"]
+IssueCategory = Literal["inventory", "order", "payment", "integration", "shipping", "system"]
+IssueSeverity = Literal["info", "warning", "critical"]
 
 
 class Product(BaseModel):
@@ -88,6 +92,18 @@ class Task(BaseModel):
     status: TaskStatus
 
 
+class OperationalIssue(BaseModel):
+    id: str
+    category: IssueCategory
+    severity: IssueSeverity
+    title: str
+    message: str
+    source: str
+    entityId: str | None = None
+    createdAt: str
+    resolved: bool
+
+
 class ChatMessage(BaseModel):
     id: str
     role: Literal["customer", "agent"]
@@ -109,6 +125,7 @@ class OperationsState(BaseModel):
     shipments: list[Shipment]
     inventoryAlerts: list[InventoryAlert]
     tasks: list[Task]
+    issues: list[OperationalIssue]
 
 
 class AgentResult(BaseModel):

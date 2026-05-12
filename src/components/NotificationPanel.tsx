@@ -60,6 +60,7 @@ function notificationItemIcon(item: NotificationItem): ReactNode {
   const icons: Record<NotificationAction["type"], ReactNode> = {
     stock: <AlertTriangle size={15} />,
     shipment: <Truck size={15} />,
+    issue: <AlertTriangle size={15} />,
     order: <ShoppingBag size={15} />,
     insight: <Users size={15} />,
     task: <ClipboardList size={15} />,

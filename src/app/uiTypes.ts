@@ -36,6 +36,7 @@ export type SearchResultKind =
   | "customer"
   | "order"
   | "shipment"
+  | "issue"
   | "message"
   | "alert"
   | "task"
@@ -66,6 +67,7 @@ export type NotificationTone = "red" | "orange" | "yellow" | "blue" | "green";
 export type NotificationAction =
   | { type: "stock"; productId: string }
   | { type: "shipment" }
+  | { type: "issue" }
   | { type: "order" }
   | { type: "insight"; insightId: string }
   | { type: "task" };

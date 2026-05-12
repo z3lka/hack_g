@@ -48,6 +48,19 @@ export function buildNotificationItems(
       });
     });
 
+  state.issues
+    .filter((issue) => !issue.resolved && issue.severity !== "info")
+    .forEach((issue) => {
+      items.push({
+        id: `issue-${issue.id}`,
+        tone: issue.severity === "critical" ? "red" : "orange",
+        title: issue.title,
+        description: issue.message,
+        meta: `${issue.source} · ${issue.category}`,
+        action: { type: "issue" },
+      });
+    });
+
   state.orders
     .filter((order) => order.dueToday && order.status !== "delivered")
     .forEach((order) => {

@@ -38,6 +38,7 @@ export function StockPage({
           {products.map((product) => {
             const averageSales = average(product.weeklySales);
             const daysLeft = averageSales ? product.stock / averageSales : 99;
+            const displayDaysLeft = Math.ceil(daysLeft);
             const alert = alertsByProduct.get(product.id);
             const tone =
               alert?.severity === "critical"
@@ -60,7 +61,7 @@ export function StockPage({
                   {Math.round(averageSales)} {product.unit}/gün
                 </span>
                 <span className={`days-left ${tone}`}>
-                  {daysLeft.toFixed(1)} gün
+                  {displayDaysLeft} gün
                 </span>
                 <StatusPill status={tone} />
                 {daysLeft <= 7 ? (

@@ -81,6 +81,8 @@ export type AgentAction = {
   type:
     | "lookup_order"
     | "check_stock"
+    | "check_errors"
+    | "summarize_operations"
     | "notify_customer"
     | "create_restock_draft"
     | "create_task_plan"
@@ -92,6 +94,18 @@ export type AgentAction = {
   payload: Record<string, string | number | boolean>;
 };
 
+export type OperationalIssue = {
+  id: string;
+  category: "inventory" | "order" | "payment" | "integration" | "shipping" | "system";
+  severity: "info" | "warning" | "critical";
+  title: string;
+  message: string;
+  source: string;
+  entityId?: string | null;
+  createdAt: string;
+  resolved: boolean;
+};
+
 export type OperationsState = {
   products: Product[];
   customers: Customer[];
@@ -99,6 +113,7 @@ export type OperationsState = {
   shipments: Shipment[];
   inventoryAlerts: InventoryAlert[];
   tasks: Task[];
+  issues: OperationalIssue[];
 };
 
 export type MemoryCategory = "inventory" | "customer" | "supplier" | "shipping" | "product" | "note";

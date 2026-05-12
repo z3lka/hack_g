@@ -119,18 +119,10 @@ def create_restock_draft(product_id: str) -> StateActionResponse:
         raise HTTPException(status_code=404, detail="Product not found")
 
     if alert is None:
-        average_demand = (
-            sum(product.weeklySales) / len(product.weeklySales)
-            if product.weeklySales
-            else 0
-        )
-        days_left = product.stock / average_demand if average_demand else 999
         alert = InventoryAlert(
             productId=product.id,
-            severity="critical" if days_left <= 2 else "warning",
-            message=(
-                f"{product.name} is projected to run out in {days_left:.1f} days."
-            ),
+            severity=store.inventory_severity(product) or "warning",
+            message=store.inventory_alert_message(product),
             resolved=False,
         )
         state.inventoryAlerts.append(alert)
