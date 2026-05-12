@@ -43,7 +43,10 @@ The Gemini integration uses `google-genai` and defaults to `gemini-2.5-flash`. S
 - `backend/app/store.py`: in-memory demo state for products, orders, customers, shipments, alerts, and tasks.
 - `src/api.ts`: frontend API client for `/api/*`.
 - `src/types.ts`: TypeScript domain types mirrored from the backend schemas.
-- `src/App.tsx`: dashboard UI and action flows.
+- `src/App.tsx`: thin composition layer for the frontend shell and pages.
+- `src/app/`: frontend controller hook, UI-specific types, search/notification/draft helpers, and formatting utilities.
+- `src/components/`: reusable shell, drawer, assistant, search, notification, and shared UI components.
+- `src/pages/`: dashboard, stock, customers, orders, and memory page modules.
 - `src/styles.css`: responsive operations UI.
 
 Actions mutate the FastAPI in-memory state so the dashboard changes visibly during the demo. `Reset demo` restores the operational state and reseeds ChromaDB memory.
