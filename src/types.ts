@@ -22,6 +22,7 @@ export type Customer = {
   name: string;
   channel: "WhatsApp" | "Email" | "Phone";
   phone: string;
+  email?: string | null;
 };
 
 export type OrderItem = {
@@ -90,7 +91,15 @@ export type AgentAction = {
     | "create_supplier_order_draft"
     | "create_customer_reminder_draft"
     | "suggest_shipping_alternative"
-    | "memory_insight_generated";
+    | "memory_insight_generated"
+    | "read_inbox"
+    | "classify_message"
+    | "extract_entities"
+    | "lookup_customer"
+    | "lookup_shipment"
+    | "create_customer_reply_draft"
+    | "approve_draft"
+    | "send_email";
   payload: Record<string, string | number | boolean>;
 };
 
@@ -163,4 +172,96 @@ export type MorningInsightsResponse = {
   memoryStatus: MemoryStatus;
   insights: ProactiveInsight[];
   actions: AgentAction[];
+};
+
+export type MessageIntent =
+  | "order_lookup"
+  | "stock_check"
+  | "shipment_risk"
+  | "issue_check"
+  | "customer_lookup"
+  | "task_summary"
+  | "operations_summary"
+  | "return_exchange"
+  | "complaint"
+  | "general"
+  | "unknown";
+
+export type MessageEntities = {
+  orderId?: string | null;
+  productId?: string | null;
+  productName?: string | null;
+  customerId?: string | null;
+  customerName?: string | null;
+  customerEmail?: string | null;
+  shipmentId?: string | null;
+  trackingCode?: string | null;
+};
+
+export type CustomerMessage = {
+  id: string;
+  threadId: string;
+  providerMessageId: string;
+  direction: "inbound" | "outbound";
+  fromName: string;
+  fromEmail: string;
+  toEmail: string;
+  subject: string;
+  body: string;
+  receivedAt: string;
+  unread: boolean;
+  intent: MessageIntent;
+  entities: MessageEntities;
+};
+
+export type AssistantDraft = {
+  id: string;
+  threadId: string;
+  messageId: string;
+  subject: string;
+  body: string;
+  toEmail: string;
+  status: "pending_review" | "approved" | "sent" | "failed";
+  intent: MessageIntent;
+  entities: MessageEntities;
+  confidence: number;
+  requiredReviewReason: string;
+  createdAt: string;
+  approvedAt?: string | null;
+  sentAt?: string | null;
+  sendRecorded: boolean;
+};
+
+export type CustomerThread = {
+  id: string;
+  subject: string;
+  customerId?: string | null;
+  customerName: string;
+  customerEmail: string;
+  status: "open" | "drafted" | "sent" | "closed";
+  unread: boolean;
+  lastMessageAt: string;
+  messages: CustomerMessage[];
+  drafts: AssistantDraft[];
+};
+
+export type ConnectorHealth = {
+  name: string;
+  type: "commerce" | "email_inbound" | "email_outbound";
+  status: "ok" | "degraded" | "disabled" | "error";
+  lastChecked: string;
+  capabilities: string[];
+  message?: string | null;
+};
+
+export type InboxSyncResponse = {
+  syncedMessages: number;
+  threads: CustomerThread[];
+  connectorHealth: ConnectorHealth[];
+};
+
+export type DraftApprovalResponse = {
+  thread: CustomerThread;
+  draft: AssistantDraft;
+  action: AgentAction;
 };

@@ -17,10 +17,11 @@ Suggested 3-minute demo:
 
 ## AI Approach
 
-The prototype uses two AI layers:
+The prototype uses three AI layers:
 
 1. A memory/RAG layer that retrieves historical business events from ChromaDB and sends them to Gemini.
 2. A deterministic operational agent that keeps order lookup, stock checks, and task generation reliable during the demo.
+3. An email assistant pipeline that classifies inbound customer email, extracts order/customer/product entities, calls commerce tools, retrieves memory, and creates human-approved reply drafts.
 
 When `GEMINI_API_KEY` is available, `/api/insights/morning` asks Gemini to produce structured insight cards and ChromaDB uses Gemini embeddings for memory search. Without a key, the backend returns deterministic fallback insights and local hash embeddings using the same memory records.
 
@@ -37,6 +38,8 @@ The Gemini integration uses `google-genai` and defaults to `gemini-2.5-flash`. S
 
 - `backend/app/main.py`: FastAPI routes for state, chat, task generation, inventory drafts, and shipping notifications.
 - `backend/app/agent.py`: Python agent runtime, customer reply generation, and operational tools.
+- `backend/app/inbox.py`: IMAP ingestion, idempotent email threading, draft creation, and SMTP send-on-approval recording.
+- `backend/app/commerce.py`: provider-neutral commerce connector interface with generic REST and in-memory demo adapters.
 - `backend/app/memory.py`: ChromaDB persistent memory, Gemini embeddings with local fallbacks, seed data, and retrieval.
 - `backend/app/insights.py`: RAG prompt construction, Gemini/fallback insight generation, and insight actions.
 - `backend/app/gemini_client.py`: Gemini API wrapper.
@@ -59,6 +62,14 @@ Actions mutate the FastAPI in-memory state so the dashboard changes visibly duri
 - `POST /api/memory/ingest`: adds new memory records.
 - `POST /api/insights/morning`: retrieves memory and generates proactive insight cards.
 
+## Inbox & Connector API
+
+- `POST /api/inbox/sync`: syncs IMAP email when configured, otherwise loads demo inbox messages once.
+- `GET /api/inbox/threads`: lists customer email threads with generated assistant drafts.
+- `GET /api/inbox/threads/{id}`: returns a single customer email thread.
+- `POST /api/assistant/drafts/{id}/approve`: records human approval and sends through SMTP when configured; without SMTP it records a dry-run send action.
+- `GET /api/connectors/health`: reports IMAP, SMTP, and commerce adapter status.
+
 ## Run Locally
 
 Start the backend:
@@ -77,8 +88,21 @@ export GEMINI_EMBEDDING_MODEL="gemini-embedding-001"
 export CHROMA_DB_PATH="./chroma_store"
 ```
 
+Optional email and commerce setup:
+
+```bash
+export IMAP_HOST="imap.example.com"
+export IMAP_USERNAME="support@example.com"
+export IMAP_PASSWORD="..."
+export SMTP_HOST="smtp.example.com"
+export SMTP_FROM_EMAIL="support@example.com"
+export COMMERCE_API_BASE_URL="https://commerce.example.com"
+export COMMERCE_API_TOKEN="..."
+```
+
 The Telegram and WhatsApp floating buttons are local mock composers. They do not
-redirect to external apps or require bot credentials.
+redirect to external apps or require bot credentials. Email drafts require human
+approval before SMTP is called.
 
 
 Start the frontend in a second terminal:

@@ -20,12 +20,38 @@ ActionType = Literal[
     "create_customer_reminder_draft",
     "suggest_shipping_alternative",
     "memory_insight_generated",
+    "read_inbox",
+    "classify_message",
+    "extract_entities",
+    "lookup_customer",
+    "lookup_shipment",
+    "create_customer_reply_draft",
+    "approve_draft",
+    "send_email",
 ]
 InsightColor = Literal["red", "yellow", "orange", "green"]
 MemoryCategory = Literal["inventory", "customer", "supplier", "shipping", "product", "note"]
 EmbeddingBackend = Literal["gemini", "sentence-transformers", "hash"]
 IssueCategory = Literal["inventory", "order", "payment", "integration", "shipping", "system"]
 IssueSeverity = Literal["info", "warning", "critical"]
+MessageIntent = Literal[
+    "order_lookup",
+    "stock_check",
+    "shipment_risk",
+    "issue_check",
+    "customer_lookup",
+    "task_summary",
+    "operations_summary",
+    "return_exchange",
+    "complaint",
+    "general",
+    "unknown",
+]
+DraftStatus = Literal["pending_review", "approved", "sent", "failed"]
+ConnectorStatus = Literal["ok", "degraded", "disabled", "error"]
+ConnectorType = Literal["commerce", "email_inbound", "email_outbound"]
+MessageDirection = Literal["inbound", "outbound"]
+ThreadStatus = Literal["open", "drafted", "sent", "closed"]
 
 
 class Product(BaseModel):
@@ -46,6 +72,7 @@ class Customer(BaseModel):
     name: str
     channel: Literal["WhatsApp", "Email", "Phone"]
     phone: str
+    email: str | None = None
 
 
 class OrderItem(BaseModel):
@@ -131,6 +158,99 @@ class OperationsState(BaseModel):
 class AgentResult(BaseModel):
     response: str
     actions: list[AgentAction]
+
+
+class MessageEntities(BaseModel):
+    orderId: str | None = None
+    productId: str | None = None
+    productName: str | None = None
+    customerId: str | None = None
+    customerName: str | None = None
+    customerEmail: str | None = None
+    shipmentId: str | None = None
+    trackingCode: str | None = None
+
+
+class AssistantInterpretation(BaseModel):
+    intent: MessageIntent
+    entities: MessageEntities = Field(default_factory=MessageEntities)
+    confidence: float
+    requiredReviewReason: str | None = None
+    memory: list[str] = Field(default_factory=list)
+    actions: list[AgentAction] = Field(default_factory=list)
+
+
+class CustomerMessage(BaseModel):
+    id: str
+    threadId: str
+    providerMessageId: str
+    direction: MessageDirection
+    fromName: str
+    fromEmail: str
+    toEmail: str
+    subject: str
+    body: str
+    receivedAt: str
+    unread: bool
+    intent: MessageIntent = "unknown"
+    entities: MessageEntities = Field(default_factory=MessageEntities)
+
+
+class AssistantDraft(BaseModel):
+    id: str
+    threadId: str
+    messageId: str
+    subject: str
+    body: str
+    toEmail: str
+    status: DraftStatus
+    intent: MessageIntent
+    entities: MessageEntities = Field(default_factory=MessageEntities)
+    confidence: float
+    requiredReviewReason: str
+    createdAt: str
+    approvedAt: str | None = None
+    sentAt: str | None = None
+    sendRecorded: bool = False
+
+
+class CustomerThread(BaseModel):
+    id: str
+    subject: str
+    customerId: str | None = None
+    customerName: str
+    customerEmail: str
+    status: ThreadStatus
+    unread: bool
+    lastMessageAt: str
+    messages: list[CustomerMessage] = Field(default_factory=list)
+    drafts: list[AssistantDraft] = Field(default_factory=list)
+
+
+class ConnectorHealth(BaseModel):
+    name: str
+    type: ConnectorType
+    status: ConnectorStatus
+    lastChecked: str
+    capabilities: list[str] = Field(default_factory=list)
+    message: str | None = None
+
+
+class InboxSyncResponse(BaseModel):
+    syncedMessages: int
+    threads: list[CustomerThread]
+    connectorHealth: list[ConnectorHealth]
+
+
+class DraftApprovalRequest(BaseModel):
+    subject: str | None = None
+    body: str | None = None
+
+
+class DraftApprovalResponse(BaseModel):
+    thread: CustomerThread
+    draft: AssistantDraft
+    action: AgentAction
 
 
 class ChatRequest(BaseModel):

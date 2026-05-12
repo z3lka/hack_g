@@ -5,6 +5,7 @@ import { Sidebar } from "./components/Sidebar";
 import { Topbar } from "./components/Topbar";
 import { CustomersPage } from "./pages/CustomersPage";
 import { DashboardPage } from "./pages/DashboardPage";
+import { InboxPage } from "./pages/InboxPage";
 import { MemoryPage } from "./pages/MemoryPage";
 import { OrdersPage } from "./pages/OrdersPage";
 import { StockPage } from "./pages/StockPage";
@@ -83,6 +84,19 @@ export default function App() {
             alerts={app.state.inventoryAlerts}
             onDraft={app.draftProduct}
             disabled={app.isMutating}
+          />
+        )}
+
+        {app.activePage === "inbox" && (
+          <InboxPage
+            threads={app.inboxThreads}
+            activeThread={app.activeInboxThread}
+            state={app.state}
+            connectorHealth={app.connectorHealth}
+            disabled={app.isMutating}
+            onSelectThread={app.setActiveInboxThreadId}
+            onSync={app.handleInboxSync}
+            onApproveDraft={app.approveInboxDraft}
           />
         )}
 

@@ -1,7 +1,10 @@
 import { FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
+  approveAssistantDraft,
   completeTaskRequest,
   createRestockDraft,
+  fetchConnectorHealth,
+  fetchInboxThreads,
   fetchMemoryRecords,
   fetchMorningInsights,
   fetchState,
@@ -10,6 +13,7 @@ import {
   notifyShipment,
   resetDemoState,
   sendCustomerMessage,
+  syncInbox,
 } from "../api";
 import { emptyState, initialMessages } from "./constants";
 import {
@@ -36,6 +40,8 @@ import type {
 } from "./uiTypes";
 import type {
   AgentAction,
+  ConnectorHealth,
+  CustomerThread,
   InventoryAlert,
   MemoryRecord,
   MemoryStatus,
@@ -52,6 +58,9 @@ export function useOperationsController() {
   const [insights, setInsights] = useState<ProactiveInsight[]>([]);
   const [memoryRecords, setMemoryRecords] = useState<MemoryRecord[]>([]);
   const [memoryStatus, setMemoryStatus] = useState<MemoryStatus | null>(null);
+  const [inboxThreads, setInboxThreads] = useState<CustomerThread[]>([]);
+  const [activeInboxThreadId, setActiveInboxThreadId] = useState<string | null>(null);
+  const [connectorHealth, setConnectorHealth] = useState<ConnectorHealth[]>([]);
   const [llmMode, setLlmMode] = useState<"gemini" | "fallback">("fallback");
   const [insightsGeneratedAt, setInsightsGeneratedAt] = useState("");
   const [apiError, setApiError] = useState("");
@@ -122,16 +131,21 @@ export function useOperationsController() {
       buildGlobalSearchResults({
         state: currentState,
         messages,
+        inboxThreads,
         insights,
         memoryRecords,
         query: globalSearch,
       }),
-    [currentState, globalSearch, insights, memoryRecords, messages],
+    [currentState, globalSearch, inboxThreads, insights, memoryRecords, messages],
   );
   const notificationItems = useMemo(
     () => buildNotificationItems(currentState, actionableInsights),
     [actionableInsights, currentState],
   );
+  const activeInboxThread =
+    inboxThreads.find((thread) => thread.id === activeInboxThreadId) ??
+    inboxThreads[0] ??
+    null;
 
   function navigate(page: PageView, nextOrdersFilter?: string) {
     if (nextOrdersFilter) {
@@ -257,6 +271,8 @@ export function useOperationsController() {
       setState(nextState);
       await refreshMorningInsights();
       await refreshMemoryRecords();
+      await refreshInbox();
+      await refreshConnectorHealth();
     } catch (error) {
       setApiError(getErrorMessage(error));
     }
@@ -272,6 +288,16 @@ export function useOperationsController() {
 
   async function refreshMemoryRecords() {
     setMemoryRecords(await fetchMemoryRecords());
+  }
+
+  async function refreshInbox() {
+    const threads = await fetchInboxThreads();
+    setInboxThreads(threads);
+    setActiveInboxThreadId((current) => current ?? threads[0]?.id ?? null);
+  }
+
+  async function refreshConnectorHealth() {
+    setConnectorHealth(await fetchConnectorHealth());
   }
 
   async function handleChatSubmit(event: FormEvent<HTMLFormElement>) {
@@ -291,6 +317,43 @@ export function useOperationsController() {
       prependActions(response.actions);
       setState(response.state);
       setChatInput("");
+    });
+  }
+
+  async function handleInboxSync() {
+    await runMutation(async () => {
+      const response = await syncInbox();
+      setInboxThreads(response.threads);
+      setConnectorHealth(response.connectorHealth);
+      setActiveInboxThreadId((current) => current ?? response.threads[0]?.id ?? null);
+      prependActions([
+        {
+          id: crypto.randomUUID(),
+          label: `${response.syncedMessages} email mesajı senkronize edildi`,
+          type: "read_inbox",
+          payload: { syncedMessages: response.syncedMessages },
+        },
+      ]);
+    });
+  }
+
+  async function approveInboxDraft(draftId: string, body?: string, subject?: string) {
+    await runMutation(async () => {
+      const response = await approveAssistantDraft(draftId, body, subject);
+      setInboxThreads((current) =>
+        current
+          .map((thread) =>
+            thread.id === response.thread.id ? response.thread : thread,
+          )
+          .sort(
+            (left, right) =>
+              new Date(right.lastMessageAt).getTime() -
+              new Date(left.lastMessageAt).getTime(),
+          ),
+      );
+      setActiveInboxThreadId(response.thread.id);
+      prependActions([response.action]);
+      await refreshConnectorHealth();
     });
   }
 
@@ -371,6 +434,8 @@ export function useOperationsController() {
       setState(await resetDemoState());
       await refreshMorningInsights();
       await refreshMemoryRecords();
+      await refreshInbox();
+      await refreshConnectorHealth();
       setActions([]);
       setMessages(initialMessages);
       setChatInput("");
@@ -533,6 +598,10 @@ export function useOperationsController() {
     insights,
     memoryRecords,
     memoryStatus,
+    inboxThreads,
+    activeInboxThread,
+    activeInboxThreadId,
+    connectorHealth,
     llmMode,
     insightsGeneratedAt,
     apiError,
@@ -563,6 +632,7 @@ export function useOperationsController() {
     toggleSidebar,
     setActivePage,
     setOrdersFilter,
+    setActiveInboxThreadId,
     setMemorySearch,
     setMemoryInput,
     setChatInput,
@@ -576,6 +646,8 @@ export function useOperationsController() {
     selectSearchResult,
     handleNotificationSelect,
     handleChatSubmit,
+    handleInboxSync,
+    approveInboxDraft,
     handleMemoryIngest,
     markShipmentNotified,
     resolveInventoryAlert,

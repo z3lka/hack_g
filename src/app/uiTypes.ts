@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-export type PageView = "dashboard" | "stock" | "customers" | "orders" | "memory";
+export type PageView = "dashboard" | "inbox" | "stock" | "customers" | "orders" | "memory";
 
 export type ChatState = "closed" | "minimized" | "open";
 
@@ -38,6 +38,7 @@ export type SearchResultKind =
   | "shipment"
   | "issue"
   | "message"
+  | "thread"
   | "alert"
   | "task"
   | "insight"

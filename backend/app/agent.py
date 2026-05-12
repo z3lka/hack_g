@@ -3,12 +3,16 @@ from datetime import datetime
 from uuid import uuid4
 
 from . import store
+from .commerce import get_commerce_connector
 from .gemini_client import gemini_client
 from .memory import query_memory
 from .models import (
     AgentAction,
     AgentResult,
+    AssistantInterpretation,
     ChatMessage,
+    Customer,
+    MessageEntities,
     OperationsState,
     Order,
     Product,
@@ -40,7 +44,10 @@ INTENTS = {
     "customer_lookup",
     "task_summary",
     "operations_summary",
+    "return_exchange",
+    "complaint",
     "general",
+    "unknown",
 }
 INTENT_SCHEMA = {
     "type": "object",
@@ -53,6 +60,7 @@ INTENT_SCHEMA = {
         "productId": {"type": "string"},
         "productName": {"type": "string"},
         "customerName": {"type": "string"},
+        "customerEmail": {"type": "string"},
     },
     "required": ["intent"],
 }
@@ -62,18 +70,31 @@ class OperationsAgent:
     def lookup_order_status(
         self, order_id: str, state: OperationsState
     ) -> tuple[Order, Shipment | None] | None:
-        order = next((item for item in state.orders if item.id == order_id), None)
+        commerce = get_commerce_connector()
+        order = commerce.lookup_order(order_id, state)
 
         if order is None:
             return None
 
-        shipment = next(
-            (item for item in state.shipments if item.orderId == order.id), None
-        )
+        shipment = commerce.shipment_lookup(order.id, state)
         return order, shipment
 
     def check_stock(self, product_id: str, state: OperationsState) -> Product | None:
-        return next((item for item in state.products if item.id == product_id), None)
+        return get_commerce_connector().stock_snapshot(product_id, state)
+
+    def lookup_customer(
+        self,
+        state: OperationsState,
+        customer_id: str | None = None,
+        email: str | None = None,
+        name: str | None = None,
+    ) -> Customer | None:
+        return get_commerce_connector().lookup_customer(
+            state,
+            customer_id=customer_id,
+            email=email,
+            name=name,
+        )
 
     def detect_shipping_risks(self, state: OperationsState) -> list[Shipment]:
         return [s for s in state.shipments if s.risk != "clear" and not s.notified]
@@ -116,8 +137,9 @@ class OperationsAgent:
     def generate_customer_reply(
         self, message: str, state: OperationsState
     ) -> AgentResult:
-        context = self._resolve_request(message, state)
-        actions = self._actions_for_context(context)
+        interpretation = self.interpret_message(message, state)
+        context = self._resolve_request(message, state, interpretation=interpretation)
+        actions = interpretation.actions
 
         prompt = self._build_grounded_reply_prompt(message, context, state)
         response_text = gemini_client.generate_text(prompt)
@@ -129,6 +151,68 @@ class OperationsAgent:
             response=self._fallback_reply(message, context, state),
             actions=actions,
         )
+
+    def interpret_message(
+        self,
+        message: str,
+        state: OperationsState,
+        customer_email: str | None = None,
+        customer_name: str | None = None,
+    ) -> AssistantInterpretation:
+        context = self._resolve_request(
+            message,
+            state,
+            customer_email=customer_email,
+            customer_name=customer_name,
+        )
+        memory_records = query_memory(self._memory_query_for_context(message, context), limit=4)
+        context["memoryRecords"] = memory_records
+        entities = self._entities_for_context(context)
+        confidence = self._confidence_for_context(context)
+        required_review_reason = self._required_review_reason(context, confidence)
+        actions = self._actions_for_context(context, entities, confidence)
+
+        return AssistantInterpretation(
+            intent=context.get("intent") or "unknown",
+            entities=entities,
+            confidence=confidence,
+            requiredReviewReason=required_review_reason,
+            memory=[record.text for record in memory_records],
+            actions=actions,
+        )
+
+    def generate_customer_email_draft(
+        self,
+        message: str,
+        state: OperationsState,
+        customer_email: str,
+        customer_name: str,
+        subject: str,
+    ) -> tuple[str, str, AssistantInterpretation]:
+        interpretation = self.interpret_message(
+            message,
+            state,
+            customer_email=customer_email,
+            customer_name=customer_name,
+        )
+        context = self._resolve_request(
+            message,
+            state,
+            customer_email=customer_email,
+            customer_name=customer_name,
+            interpretation=interpretation,
+        )
+        prompt = self._build_customer_email_draft_prompt(
+            message,
+            subject,
+            context,
+            state,
+            interpretation,
+        )
+        response_text = gemini_client.generate_text(prompt)
+        body = response_text.strip() if response_text else self._fallback_reply(message, context, state)
+
+        return self._reply_subject(subject), body, interpretation
 
     def _detect_order_id(self, message: str) -> str | None:
         match = ORDER_ID_PATTERN.search(message.lower())
@@ -210,7 +294,9 @@ class OperationsAgent:
         self, message: str, state: OperationsState
     ) -> dict[str, str] | None:
         product_lines = "\n".join(f"- {p.id}: {p.name}" for p in state.products)
-        customer_lines = "\n".join(f"- {c.id}: {c.name}" for c in state.customers)
+        customer_lines = "\n".join(
+            f"- {c.id}: {c.name} ({c.email or 'no email'})" for c in state.customers
+        )
         prompt = f"""
 Classify this operations assistant message.
 Return only JSON matching the schema.
@@ -226,6 +312,8 @@ Valid intents:
 - customer_lookup: customer rhythm or customer-specific question
 - task_summary: team task or todo question
 - operations_summary: broad "what needs attention" question
+- return_exchange: return, exchange, cancellation, or refund request
+- complaint: damaged item, wrong item, angry customer, or service complaint
 - general: anything else
 
 Products:
@@ -241,8 +329,32 @@ Customers:
 
         return {key: str(value) for key, value in payload.items() if value}
 
-    def _resolve_request(self, message: str, state: OperationsState) -> dict:
-        intent_payload = self._detect_intent_with_gemini(message, state) or {}
+    def _resolve_request(
+        self,
+        message: str,
+        state: OperationsState,
+        customer_email: str | None = None,
+        customer_name: str | None = None,
+        interpretation: AssistantInterpretation | None = None,
+    ) -> dict:
+        if interpretation:
+            intent_payload = {
+                "intent": interpretation.intent,
+                "orderId": interpretation.entities.orderId or "",
+                "productId": interpretation.entities.productId or "",
+                "productName": interpretation.entities.productName or "",
+                "customerName": interpretation.entities.customerName or "",
+                "customerEmail": interpretation.entities.customerEmail or "",
+            }
+        else:
+            intent_payload = self._detect_intent_with_gemini(message, state) or {}
+
+        customer = self._detect_customer(
+            state,
+            message=message,
+            customer_email=customer_email or intent_payload.get("customerEmail"),
+            customer_name=customer_name or intent_payload.get("customerName"),
+        )
         order_id = self._detect_order_id(message) or intent_payload.get("orderId")
         product = self._detect_product(message, state) or self._product_from_id_or_name(
             intent_payload.get("productId"),
@@ -254,22 +366,139 @@ Customers:
         if intent not in INTENTS:
             intent = self._heuristic_intent(message, order_id, product)
 
+        order_resolved_from_customer = False
+        if not order_id and customer and intent in {"order_lookup", "shipment_risk"}:
+            latest_order = self._latest_order_for_customer(customer, state)
+            if latest_order:
+                order_id = latest_order.id
+                order_resolved_from_customer = True
+
         order_context = self.lookup_order_status(order_id, state) if order_id else None
         active_issues = [issue for issue in state.issues if not issue.resolved]
-        active_alerts = [alert for alert in state.inventoryAlerts if not alert.resolved]
+        active_alerts = get_commerce_connector().stock_alerts(state)
         risky_shipments = self.detect_shipping_risks(state)
         open_tasks = [task for task in state.tasks if task.status == "open"]
 
         return {
             "intent": intent,
             "orderId": order_id,
+            "orderResolvedFromCustomer": order_resolved_from_customer,
             "orderContext": order_context,
             "product": product,
+            "customer": customer,
             "activeIssues": active_issues,
             "activeAlerts": active_alerts,
             "riskyShipments": risky_shipments,
             "openTasks": open_tasks,
+            "memoryRecords": interpretation.memory if interpretation else [],
         }
+
+    def _detect_customer(
+        self,
+        state: OperationsState,
+        message: str,
+        customer_email: str | None = None,
+        customer_name: str | None = None,
+    ) -> Customer | None:
+        if customer_email or customer_name:
+            customer = self.lookup_customer(
+                state,
+                email=customer_email,
+                name=customer_name,
+            )
+            if customer:
+                return customer
+
+        normalized = _normalize(message)
+        for customer in state.customers:
+            if _normalize(customer.name) in normalized:
+                return customer
+            if customer.email and _normalize(customer.email) in normalized:
+                return customer
+
+        return None
+
+    def _latest_order_for_customer(
+        self,
+        customer: Customer,
+        state: OperationsState,
+    ) -> Order | None:
+        customer_orders = [order for order in state.orders if order.customerId == customer.id]
+        if not customer_orders:
+            return None
+
+        return sorted(customer_orders, key=lambda order: order.createdAt, reverse=True)[0]
+
+    def _entities_for_context(self, context: dict) -> MessageEntities:
+        product = context.get("product")
+        customer = context.get("customer")
+        order_context = context.get("orderContext")
+        shipment = order_context[1] if order_context else None
+
+        return MessageEntities(
+            orderId=context.get("orderId"),
+            productId=product.id if product else None,
+            productName=product.name if product else None,
+            customerId=customer.id if customer else None,
+            customerName=customer.name if customer else None,
+            customerEmail=customer.email if customer else None,
+            shipmentId=shipment.id if shipment else None,
+            trackingCode=shipment.trackingCode if shipment else None,
+        )
+
+    def _confidence_for_context(self, context: dict) -> float:
+        intent = context.get("intent")
+
+        if context.get("orderContext"):
+            return 0.74 if context.get("orderResolvedFromCustomer") else 0.92
+
+        if context.get("product") and intent == "stock_check":
+            return 0.9
+
+        if context.get("customer"):
+            return 0.72
+
+        if intent in {"order_lookup", "shipment_risk"} and not context.get("orderId"):
+            return 0.38
+
+        if intent in {"return_exchange", "complaint"}:
+            return 0.58
+
+        if intent in {"operations_summary", "issue_check", "task_summary"}:
+            return 0.8
+
+        return 0.62
+
+    def _required_review_reason(self, context: dict, confidence: float) -> str | None:
+        reasons = ["Human approval is required before any customer email is sent."]
+
+        if context.get("intent") in {"order_lookup", "shipment_risk"} and not context.get("orderContext"):
+            reasons.append("No matching order was found.")
+
+        if context.get("orderResolvedFromCustomer"):
+            reasons.append("Order ID was inferred from the customer email rather than stated explicitly.")
+
+        if context.get("intent") == "stock_check" and not context.get("product"):
+            reasons.append("The requested product was not identified.")
+
+        if confidence < 0.7:
+            reasons.append("Assistant confidence is below the auto-clear threshold.")
+
+        return " ".join(reasons)
+
+    def _memory_query_for_context(self, message: str, context: dict) -> str:
+        product = context.get("product")
+        customer = context.get("customer")
+        order_id = context.get("orderId") or ""
+        parts = [
+            message,
+            context.get("intent") or "",
+            order_id,
+            product.name if product else "",
+            customer.name if customer else "",
+            customer.email if customer and customer.email else "",
+        ]
+        return " ".join(part for part in parts if part)
 
     def _heuristic_intent(
         self, message: str, order_id: str | None, product: Product | None
@@ -279,8 +508,17 @@ Customers:
         if order_id:
             return "order_lookup"
 
+        if any(word in normalized for word in ["iade", "degisim", "iptal", "refund", "return", "exchange", "cancel"]):
+            return "return_exchange"
+
+        if any(word in normalized for word in ["sikayet", "kirik", "hasar", "yanlis", "complaint", "damaged", "wrong", "broken"]):
+            return "complaint"
+
         if product or any(word in normalized for word in ["stok", "stock", "kalan", "restock"]):
             return "stock_check"
+
+        if any(word in normalized for word in ["siparis", "order", "nerede", "where", "gelir", "arrive", "eta", "teslim", "delivery", "takip", "tracking"]):
+            return "order_lookup"
 
         if any(word in normalized for word in ["hata", "error", "issue", "uyari", "warning", "problem", "fail"]):
             return "issue_check"
@@ -293,11 +531,58 @@ Customers:
 
         return "operations_summary"
 
-    def _actions_for_context(self, context: dict) -> list[AgentAction]:
-        actions: list[AgentAction] = []
+    def _actions_for_context(
+        self,
+        context: dict,
+        entities: MessageEntities | None = None,
+        confidence: float | None = None,
+    ) -> list[AgentAction]:
+        actions: list[AgentAction] = [
+            AgentAction(
+                id=str(uuid4()),
+                label=f"Classified message as {context.get('intent', 'unknown')}",
+                type="classify_message",
+                payload={
+                    "intent": context.get("intent", "unknown"),
+                    "confidencePct": round((confidence or 0) * 100),
+                },
+            )
+        ]
         order_id = context.get("orderId")
         product = context.get("product")
+        customer = context.get("customer")
         intent = context.get("intent")
+
+        if entities and any(
+            [
+                entities.orderId,
+                entities.productId,
+                entities.customerId,
+                entities.customerEmail,
+            ]
+        ):
+            actions.append(
+                AgentAction(
+                    id=str(uuid4()),
+                    label="Extracted customer message entities",
+                    type="extract_entities",
+                    payload={
+                        "orderId": entities.orderId or "",
+                        "productId": entities.productId or "",
+                        "customerId": entities.customerId or "",
+                    },
+                )
+            )
+
+        if customer:
+            actions.append(
+                AgentAction(
+                    id=str(uuid4()),
+                    label=f"Looked up customer {customer.name}",
+                    type="lookup_customer",
+                    payload={"customerId": customer.id},
+                )
+            )
 
         if order_id:
             actions.append(
@@ -306,6 +591,17 @@ Customers:
                     label=f"Looked up order {order_id}",
                     type="lookup_order",
                     payload={"orderId": order_id},
+                )
+            )
+
+        if context.get("orderContext") and context["orderContext"][1]:
+            shipment = context["orderContext"][1]
+            actions.append(
+                AgentAction(
+                    id=str(uuid4()),
+                    label=f"Looked up shipment {shipment.trackingCode}",
+                    type="lookup_shipment",
+                    payload={"orderId": shipment.orderId, "trackingCode": shipment.trackingCode},
                 )
             )
 
@@ -367,10 +663,58 @@ Exact data available for the reply:
 Reply with one short paragraph. No markdown.
 """.strip()
 
+    def _build_customer_email_draft_prompt(
+        self,
+        message: str,
+        subject: str,
+        context: dict,
+        state: OperationsState,
+        interpretation: AssistantInterpretation,
+    ) -> str:
+        context_lines = self._grounded_context_lines(context, state)
+        memory_context = "\n".join(f"- {item}" for item in interpretation.memory)
+
+        return f"""
+You are drafting a customer support email for a small Turkish business.
+The business owner must approve this draft before it is sent.
+Reply in the same language as the customer message.
+Use only the exact operational data below. Do not invent refunds, reservations, discounts, dates, carriers, or stock updates.
+If the customer asks for something the data cannot answer, acknowledge the request and say the team will check it.
+Do not say the email has been sent or that inventory was reserved.
+Return only the email body. No markdown.
+
+Incoming subject:
+"{subject}"
+
+Incoming customer message:
+"{message}"
+
+Detected intent: {interpretation.intent}
+Confidence: {round(interpretation.confidence, 2)}
+Review note: {interpretation.requiredReviewReason or "Human approval required."}
+
+Exact operational data:
+{context_lines}
+
+Relevant memory:
+{memory_context or "- No relevant memory records found."}
+""".strip()
+
+    def _reply_subject(self, subject: str) -> str:
+        normalized = subject.strip()
+        return normalized if normalized.lower().startswith("re:") else f"Re: {normalized or 'Customer message'}"
+
     def _grounded_context_lines(self, context: dict, state: OperationsState) -> str:
         lines: list[str] = []
         order_context = context.get("orderContext")
         product = context.get("product")
+        customer = context.get("customer")
+
+        if customer:
+            lines.append(
+                f"Customer {customer.name}: id={customer.id}, channel={customer.channel}, "
+                f"phone={customer.phone}, email={customer.email or 'N/A'}."
+            )
 
         if order_context:
             order, shipment = order_context
@@ -438,6 +782,11 @@ Reply with one short paragraph. No markdown.
                 lines.append(
                     f"Open task {task.priority}: {task.title}, owner={task.owner}, orderId={task.orderId or 'N/A'}"
                 )
+
+        memory_records = context.get("memoryRecords") or []
+        for record in memory_records[:4]:
+            record_text = record.text if hasattr(record, "text") else str(record)
+            lines.append(f"Relevant memory: {record_text}")
 
         return "\n".join(f"- {line}" for line in lines) or "- No matching operational data found."
 
@@ -556,6 +905,20 @@ Relevant business memory:
                 )
                 return f"{len(shipments)} kargo riski buldum: {shipment_summary_tr}."
             return f"I found {len(shipments)} shipment risks: {shipment_summary}."
+
+        if intent == "return_exchange":
+            return (
+                "Mesajınızı aldık. İade veya değişim talebinizi kontrol edip sipariş bilgileriyle birlikte size dönüş yapacağız."
+                if _prefers_turkish(message)
+                else "We received your message. We will check the return or exchange request against the order details and follow up."
+            )
+
+        if intent == "complaint":
+            return (
+                "Mesajınızı aldık. Yaşadığınız sorunu sipariş ve ürün bilgileriyle birlikte kontrol edip size net bilgi vereceğiz."
+                if _prefers_turkish(message)
+                else "We received your message. We will review the issue against the order and product details and reply with a clear update."
+            )
 
         if _prefers_turkish(message):
             return (

@@ -1,6 +1,10 @@
 import type {
   AgentAction,
   ChatMessage,
+  ConnectorHealth,
+  CustomerThread,
+  DraftApprovalResponse,
+  InboxSyncResponse,
   MemoryRecord,
   MemoryRecordInput,
   MemoryStatus,
@@ -64,6 +68,33 @@ export async function sendCustomerMessage(message: string) {
     method: "POST",
     body: JSON.stringify({ message }),
   });
+}
+
+export async function syncInbox() {
+  return request<InboxSyncResponse>("/inbox/sync", { method: "POST" });
+}
+
+export async function fetchInboxThreads() {
+  return request<CustomerThread[]>("/inbox/threads");
+}
+
+export async function fetchInboxThread(threadId: string) {
+  return request<CustomerThread>(`/inbox/threads/${threadId}`);
+}
+
+export async function approveAssistantDraft(
+  draftId: string,
+  body?: string,
+  subject?: string,
+) {
+  return request<DraftApprovalResponse>(`/assistant/drafts/${draftId}/approve`, {
+    method: "POST",
+    body: JSON.stringify({ body, subject }),
+  });
+}
+
+export async function fetchConnectorHealth() {
+  return request<ConnectorHealth[]>("/connectors/health");
 }
 
 export async function notifyShipment(orderId: string) {

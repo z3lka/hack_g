@@ -1,5 +1,6 @@
 import type {
   ChatMessage,
+  CustomerThread,
   MemoryRecord,
   OperationsState,
   ProactiveInsight,
@@ -20,6 +21,7 @@ export const searchKindOrder: SearchResultKind[] = [
   "shipment",
   "issue",
   "message",
+  "thread",
   "alert",
   "task",
   "insight",
@@ -33,6 +35,7 @@ export const searchKindLabels: Record<SearchResultKind, string> = {
   shipment: "Takip",
   issue: "Operasyon Hataları",
   message: "Mesajlar",
+  thread: "Gelen Kutusu",
   alert: "Stok Uyarıları",
   task: "Görevler",
   insight: "İçgörüler",
@@ -42,12 +45,14 @@ export const searchKindLabels: Record<SearchResultKind, string> = {
 export function buildGlobalSearchResults({
   state,
   messages,
+  inboxThreads,
   insights,
   memoryRecords,
   query,
 }: {
   state: OperationsState;
   messages: ChatMessage[];
+  inboxThreads: CustomerThread[];
   insights: ProactiveInsight[];
   memoryRecords: MemoryRecord[];
   query: string;
@@ -184,6 +189,28 @@ export function buildGlobalSearchResults({
       meta: message.timestamp,
       keywords: ["mesaj message sohbet chat"],
       target: { type: "chat" },
+    });
+  });
+
+  inboxThreads.forEach((thread) => {
+    const latestMessage = [...thread.messages]
+      .reverse()
+      .find((message) => message.direction === "inbound");
+    const latestDraft = thread.drafts[thread.drafts.length - 1];
+
+    add({
+      id: `thread-${thread.id}`,
+      kind: "thread",
+      title: `${thread.customerName} · ${thread.subject}`,
+      description: compactText(latestMessage?.body ?? "Email thread", 120),
+      meta: `${thread.status} · ${latestDraft?.intent ?? "unknown"}`,
+      keywords: [
+        "email inbox gelen kutusu müşteri mesaj",
+        thread.customerEmail,
+        latestDraft?.requiredReviewReason ?? "",
+        latestDraft?.body ?? "",
+      ],
+      target: { type: "page", page: "inbox" },
     });
   });
 

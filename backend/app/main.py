@@ -5,12 +5,26 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import store
 from .agent import agent, create_chat_message
+from .commerce import get_commerce_connector
 from .insights import generate_morning_insights
+from .inbox import (
+    approve_draft,
+    email_connector_health,
+    get_thread,
+    list_threads,
+    reset_inbox_state,
+    sync_inbox,
+)
 from .memory import ingest_memory, list_memory_records, memory_status, seed_memory
 from .models import (
     AgentAction,
     ChatRequest,
     ChatResponse,
+    ConnectorHealth,
+    CustomerThread,
+    DraftApprovalRequest,
+    DraftApprovalResponse,
+    InboxSyncResponse,
     InventoryAlert,
     MemoryIngestRequest,
     MemoryIngestResponse,
@@ -76,6 +90,34 @@ def ingest_memory_endpoint(request: MemoryIngestRequest) -> MemoryIngestResponse
 @app.post("/api/insights/morning", response_model=MorningInsightsResponse)
 def morning_insights() -> MorningInsightsResponse:
     return generate_morning_insights(store.get_state())
+
+
+@app.post("/api/inbox/sync", response_model=InboxSyncResponse)
+def sync_email_inbox() -> InboxSyncResponse:
+    return sync_inbox(store.get_state())
+
+
+@app.get("/api/inbox/threads", response_model=list[CustomerThread])
+def read_inbox_threads() -> list[CustomerThread]:
+    return list_threads()
+
+
+@app.get("/api/inbox/threads/{thread_id}", response_model=CustomerThread)
+def read_inbox_thread(thread_id: str) -> CustomerThread:
+    return get_thread(thread_id)
+
+
+@app.post("/api/assistant/drafts/{draft_id}/approve", response_model=DraftApprovalResponse)
+def approve_assistant_draft(
+    draft_id: str,
+    request: DraftApprovalRequest,
+) -> DraftApprovalResponse:
+    return approve_draft(draft_id, request)
+
+
+@app.get("/api/connectors/health", response_model=list[ConnectorHealth])
+def connectors_health() -> list[ConnectorHealth]:
+    return [*email_connector_health(), get_commerce_connector().health()]
 
 
 @app.post("/api/chat", response_model=ChatResponse)
@@ -177,4 +219,5 @@ def complete_task(task_id: str) -> StateActionResponse:
 @app.post("/api/reset", response_model=OperationsState)
 def reset_demo() -> OperationsState:
     seed_memory(force=True)
+    reset_inbox_state()
     return store.reset_state()
