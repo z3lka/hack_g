@@ -13,6 +13,8 @@ import {
   Mail,
   MessageCircle,
   MessageSquareText,
+  PanelLeftClose,
+  PanelLeftOpen,
   RefreshCw,
   Search,
   Send,
@@ -26,6 +28,7 @@ import {
 } from "lucide-react";
 import {
   FormEvent,
+  KeyboardEvent,
   ReactNode,
   useEffect,
   useMemo,
@@ -56,6 +59,8 @@ import type {
   Product,
   ProactiveInsight,
 } from "./types";
+import compactAppIcon from "../assets/new_icon.png";
+import expandedAppIcon from "../assets/cirak.png";
 
 const starterMessages = [
   "Sipariş 128 ne zaman gelir?",
@@ -110,10 +115,76 @@ type MockComposerState = {
   message: string;
   notice: string;
 };
+type SearchResultKind =
+  | "product"
+  | "customer"
+  | "order"
+  | "shipment"
+  | "message"
+  | "alert"
+  | "task"
+  | "insight"
+  | "memory";
+type SearchTarget =
+  | {
+      type: "page";
+      page: PageView;
+      ordersFilter?: string;
+      memorySearch?: string;
+    }
+  | { type: "chat" };
+type SearchResult = {
+  id: string;
+  kind: SearchResultKind;
+  title: string;
+  description: string;
+  meta: string;
+  keywords: string[];
+  target: SearchTarget;
+};
+type NotificationTone = "red" | "orange" | "yellow" | "blue" | "green";
+type NotificationAction =
+  | { type: "stock"; productId: string }
+  | { type: "shipment" }
+  | { type: "order" }
+  | { type: "insight"; insightId: string }
+  | { type: "task" };
+type NotificationItem = {
+  id: string;
+  tone: NotificationTone;
+  title: string;
+  description: string;
+  meta: string;
+  action: NotificationAction;
+};
 type ExternalBotChannel = {
   id: FloatingMockChannel;
   label: string;
   icon: ReactNode;
+};
+
+const searchKindOrder: SearchResultKind[] = [
+  "product",
+  "customer",
+  "order",
+  "shipment",
+  "message",
+  "alert",
+  "task",
+  "insight",
+  "memory",
+];
+
+const searchKindLabels: Record<SearchResultKind, string> = {
+  product: "Ürünler",
+  customer: "Müşteriler",
+  order: "Siparişler",
+  shipment: "Takip",
+  message: "Mesajlar",
+  alert: "Stok Uyarıları",
+  task: "Görevler",
+  insight: "İçgörüler",
+  memory: "Hafıza",
 };
 
 const botChannels: ExternalBotChannel[] = [
@@ -145,15 +216,48 @@ export default function App() {
   const [ordersFilter, setOrdersFilter] = useState("Tümü");
   const [draftModal, setDraftModal] = useState<DraftModal | null>(null);
   const [draftNotice, setDraftNotice] = useState("");
-  const [mockComposer, setMockComposer] = useState<MockComposerState | null>(null);
+  const [mockComposer, setMockComposer] = useState<MockComposerState | null>(
+    null,
+  );
   const [memorySearch, setMemorySearch] = useState("");
   const [memoryInput, setMemoryInput] = useState("");
   const [chatState, setChatState] = useState<ChatState>("closed");
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [globalSearch, setGlobalSearch] = useState("");
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const chatLogRef = useRef<HTMLDivElement>(null);
+  const searchMenuRef = useRef<HTMLDivElement>(null);
+  const notificationsMenuRef = useRef<HTMLDivElement>(null);
   const todayLabel = useMemo(() => formatTodayLabel(new Date()), []);
 
   useEffect(() => {
     void loadState();
+  }, []);
+
+  useEffect(() => {
+    function closeFloatingMenus(event: MouseEvent) {
+      const target = event.target;
+
+      if (!(target instanceof Node)) {
+        return;
+      }
+
+      if (searchMenuRef.current && !searchMenuRef.current.contains(target)) {
+        setIsSearchOpen(false);
+      }
+
+      if (
+        notificationsMenuRef.current &&
+        !notificationsMenuRef.current.contains(target)
+      ) {
+        setIsNotificationsOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", closeFloatingMenus);
+
+    return () => document.removeEventListener("mousedown", closeFloatingMenus);
   }, []);
 
   useEffect(() => {
@@ -163,8 +267,12 @@ export default function App() {
   }, [messages, chatState]);
 
   const currentState = state ?? emptyState;
-  const activeAlerts = currentState.inventoryAlerts.filter((alert) => !alert.resolved);
-  const criticalAlerts = activeAlerts.filter((alert) => alert.severity === "critical");
+  const activeAlerts = currentState.inventoryAlerts.filter(
+    (alert) => !alert.resolved,
+  );
+  const criticalAlerts = activeAlerts.filter(
+    (alert) => alert.severity === "critical",
+  );
   const dueToday = currentState.orders.filter(
     (order) => order.dueToday && order.status !== "delivered",
   );
@@ -185,6 +293,99 @@ export default function App() {
   const actionableInsights = insights.filter((insight) =>
     isActionableInsight(insight, currentState),
   );
+  const globalSearchResults = useMemo(
+    () =>
+      buildGlobalSearchResults({
+        state: currentState,
+        messages,
+        insights,
+        memoryRecords,
+        query: globalSearch,
+      }),
+    [currentState, globalSearch, insights, memoryRecords, messages],
+  );
+  const notificationItems = useMemo(
+    () => buildNotificationItems(currentState, actionableInsights),
+    [actionableInsights, currentState],
+  );
+
+  function handleGlobalSearchSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (globalSearchResults[0]) {
+      selectSearchResult(globalSearchResults[0]);
+    }
+  }
+
+  function handleGlobalSearchKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Escape") {
+      setIsSearchOpen(false);
+      event.currentTarget.blur();
+    }
+  }
+
+  function selectSearchResult(result: SearchResult) {
+    setIsSearchOpen(false);
+
+    if (result.target.type === "chat") {
+      setChatState("open");
+      return;
+    }
+
+    if (result.target.ordersFilter) {
+      setOrdersFilter(result.target.ordersFilter);
+    }
+
+    if (result.target.memorySearch !== undefined) {
+      setMemorySearch(result.target.memorySearch);
+    }
+
+    setActivePage(result.target.page);
+  }
+
+  function handleNotificationSelect(item: NotificationItem) {
+    setIsNotificationsOpen(false);
+
+    if (item.action.type === "stock") {
+      const { productId } = item.action;
+      const alert = currentState.inventoryAlerts.find(
+        (candidate) => !candidate.resolved && candidate.productId === productId,
+      );
+
+      if (alert) {
+        void resolveInventoryAlert(alert);
+      }
+
+      return;
+    }
+
+    if (item.action.type === "shipment") {
+      setOrdersFilter("Risk");
+      setActivePage("orders");
+      return;
+    }
+
+    if (item.action.type === "order") {
+      setOrdersFilter("Bugün");
+      setActivePage("orders");
+      return;
+    }
+
+    if (item.action.type === "insight") {
+      const { insightId } = item.action;
+      const insight = actionableInsights.find(
+        (candidate) => candidate.id === insightId,
+      );
+
+      if (insight) {
+        handleInsightAction(insight);
+      }
+
+      return;
+    }
+
+    setActivePage("dashboard");
+  }
 
   async function loadState() {
     try {
@@ -474,60 +675,103 @@ export default function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div
+      className={`app-shell${isSidebarCollapsed ? " sidebar-collapsed" : ""}`}>
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-icon">
-            <Sparkles size={18} />
+          <div className="brand-main">
+            <button
+              className="brand-icon"
+              onClick={() => setActivePage("dashboard")}
+              type="button"
+              aria-label="Dashboard'a git"
+              title="Dashboard'a git">
+              <img
+                src={isSidebarCollapsed ? compactAppIcon : expandedAppIcon}
+                alt=""
+              />
+            </button>
           </div>
-          <div className="brand-text">
-            <strong>Esnaf Hafızası</strong>
-            <span>KOBİ Komuta Merkezi</span>
-          </div>
+          <button
+            className="sidebar-toggle"
+            onClick={() => setIsSidebarCollapsed((current) => !current)}
+            type="button"
+            aria-label={
+              isSidebarCollapsed ? "Menüyü genişlet" : "Menüyü daralt"
+            }
+            title={isSidebarCollapsed ? "Menüyü genişlet" : "Menüyü daralt"}>
+            {isSidebarCollapsed ? (
+              <PanelLeftOpen size={16} />
+            ) : (
+              <PanelLeftClose size={16} />
+            )}
+          </button>
         </div>
 
         <nav className="nav">
-          {(["dashboard", "stock", "customers", "orders", "memory"] as PageView[]).map(
-            (page) => (
+          {(
+            [
+              "dashboard",
+              "stock",
+              "customers",
+              "orders",
+              "memory",
+            ] as PageView[]
+          ).map((page) => {
+            const label = navLabel(page);
+
+            return (
               <button
                 key={page}
                 className={`nav-btn${activePage === page ? " active" : ""}`}
                 onClick={() => setActivePage(page)}
                 type="button"
-              >
+                aria-label={label}
+                title={label}>
                 <span className="nav-icon">{navIcon(page)}</span>
-                <span>{navLabel(page)}</span>
+                <span className="nav-label">{label}</span>
               </button>
-            ),
-          )}
+            );
+          })}
         </nav>
 
         <div className="sidebar-footer">
-          <div className="auto-run-card">
+          <div
+            className="auto-run-card"
+            title={`Günlük Plan: ${dueToday.length} sipariş bugün teslim`}>
             <div className="auto-run-header">
               <Clock3 size={15} />
-              <span>Günlük Plan</span>
+              <span className="sidebar-label">Günlük Plan</span>
             </div>
-            <p className="auto-run-count">{dueToday.length} sipariş bugün teslim</p>
+            <p className="auto-run-count sidebar-label">
+              {dueToday.length} sipariş bugün teslim
+            </p>
             <button
               className="btn-outline-green"
               onClick={handleGeneratePlan}
               disabled={isMutating}
               type="button"
-            >
+              aria-label="Görev Planı Oluştur"
+              title="Görev Planı Oluştur">
               <ClipboardList size={14} />
-              Görev Planı Oluştur
+              <span className="sidebar-label">Görev Planı Oluştur</span>
             </button>
           </div>
 
-          <div className="memory-badge">
+          <div
+            className="memory-badge"
+            title={`Hafıza: ${
+              memoryStatus?.backend === "chromadb" ? "ChromaDB" : "Fallback"
+            }, ${memoryStatus?.recordCount ?? 0} kayıt`}>
             <div
               className={`mem-dot ${
                 memoryStatus?.backend === "chromadb" ? "green" : "yellow"
               }`}
             />
-            <div>
-              <span>{memoryStatus?.backend === "chromadb" ? "ChromaDB" : "Fallback"}</span>
+            <div className="sidebar-label">
+              <span>
+                {memoryStatus?.backend === "chromadb" ? "ChromaDB" : "Fallback"}
+              </span>
               <span>
                 {memoryStatus?.recordCount ?? 0} kayıt ·{" "}
                 {llmMode === "gemini" ? "Gemini aktif" : "Fallback mod"}
@@ -544,19 +788,79 @@ export default function App() {
             <p className="page-date">{todayLabel}</p>
           </div>
           <div className="topbar-right">
-            <div className="search-pill">
-              <Search size={15} />
-              <span>Ara...</span>
+            <div
+              className="topbar-search"
+              ref={searchMenuRef}>
+              <form
+                className="search-pill"
+                onSubmit={handleGlobalSearchSubmit}>
+                <Search size={15} />
+                <input
+                  value={globalSearch}
+                  onChange={(event) => {
+                    setGlobalSearch(event.target.value);
+                    setIsSearchOpen(true);
+                    setIsNotificationsOpen(false);
+                  }}
+                  onFocus={() => {
+                    setIsSearchOpen(true);
+                    setIsNotificationsOpen(false);
+                  }}
+                  onKeyDown={handleGlobalSearchKeyDown}
+                  placeholder="Ürün, müşteri, sipariş, takip ara..."
+                  aria-label="Genel arama"
+                />
+                {globalSearch && (
+                  <button
+                    className="search-clear"
+                    onClick={() => {
+                      setGlobalSearch("");
+                      setIsSearchOpen(false);
+                    }}
+                    type="button"
+                    aria-label="Aramayı temizle">
+                    <X size={14} />
+                  </button>
+                )}
+              </form>
+              {isSearchOpen && globalSearch.trim() && (
+                <SearchResultsMenu
+                  results={globalSearchResults}
+                  query={globalSearch}
+                  onSelect={selectSearchResult}
+                />
+              )}
             </div>
-            <button className="icon-btn" aria-label="Bildirimler" type="button">
-              <Bell size={17} />
-            </button>
+            <div
+              className="notification-menu"
+              ref={notificationsMenuRef}>
+              <button
+                className="icon-btn notification-trigger"
+                onClick={() => {
+                  setIsNotificationsOpen((current) => !current);
+                  setIsSearchOpen(false);
+                }}
+                aria-label={`${notificationItems.length} bildirim`}
+                type="button">
+                <Bell size={17} />
+                {notificationItems.length > 0 && (
+                  <span className="notification-count">
+                    {notificationItems.length > 99 ? "99+" : notificationItems.length}
+                  </span>
+                )}
+              </button>
+              {isNotificationsOpen && (
+                <NotificationPanel
+                  items={notificationItems}
+                  onSelect={handleNotificationSelect}
+                />
+              )}
+            </div>
             <button
               className="btn-outline"
               onClick={resetDemo}
               disabled={isMutating}
-              type="button"
-            >
+              type="button">
               <RefreshCw size={14} />
               Sıfırla
             </button>
@@ -615,7 +919,9 @@ export default function App() {
                   <h2>Proaktif Uyarılar</h2>
                 </div>
                 <span className="badge-pill">
-                  {insightsGeneratedAt ? formatTime(insightsGeneratedAt) : "Yükleniyor"}
+                  {insightsGeneratedAt
+                    ? formatTime(insightsGeneratedAt)
+                    : "Yükleniyor"}
                 </span>
               </div>
               <div className="insight-grid">
@@ -656,7 +962,9 @@ export default function App() {
                         );
 
                         return (
-                          <div className="order-row" key={order.id}>
+                          <div
+                            className="order-row"
+                            key={order.id}>
                             <div className="order-row-left">
                               <span className="order-num">#{order.id}</span>
                               <div>
@@ -665,7 +973,9 @@ export default function App() {
                               </div>
                             </div>
                             <div className="order-row-right">
-                              <StatusPill status={shipment?.risk ?? order.status} />
+                              <StatusPill
+                                status={shipment?.risk ?? order.status}
+                              />
                               <span className="order-amount">
                                 {formatCurrency(order.total)}
                               </span>
@@ -685,18 +995,22 @@ export default function App() {
                       <p className="eyebrow">Görevler</p>
                       <h2>Ekip Sırası</h2>
                     </div>
-                    <ClipboardList size={18} className="section-icon" />
+                    <ClipboardList
+                      size={18}
+                      className="section-icon"
+                    />
                   </div>
                   <div className="task-list">
                     {openTasks.slice(0, 5).map((task) => (
-                      <div className="task-row" key={task.id}>
+                      <div
+                        className="task-row"
+                        key={task.id}>
                         <button
                           className="check-btn"
                           onClick={() => completeTask(task.id)}
                           disabled={isMutating}
                           aria-label="Tamamla"
-                          type="button"
-                        >
+                          type="button">
                           <CheckCircle2 size={16} />
                         </button>
                         <div className="task-info">
@@ -709,7 +1023,9 @@ export default function App() {
                         <PriorityTag priority={task.priority} />
                       </div>
                     ))}
-                    {!openTasks.length && <Empty text="Tüm görevler tamamlandı." />}
+                    {!openTasks.length && (
+                      <Empty text="Tüm görevler tamamlandı." />
+                    )}
                   </div>
                 </section>
               </div>
@@ -721,7 +1037,10 @@ export default function App() {
                       <p className="eyebrow">Stok</p>
                       <h2>Yeniden Sipariş Riskleri</h2>
                     </div>
-                    <Boxes size={18} className="section-icon" />
+                    <Boxes
+                      size={18}
+                      className="section-icon"
+                    />
                   </div>
                   <div className="alert-list">
                     {activeAlerts.slice(0, 4).map((alert) => {
@@ -739,8 +1058,14 @@ export default function App() {
                       );
 
                       return (
-                        <div className="alert-row" key={alert.productId}>
-                          <img src={product.image} alt="" className="alert-thumb" />
+                        <div
+                          className="alert-row"
+                          key={alert.productId}>
+                          <img
+                            src={product.image}
+                            alt=""
+                            className="alert-thumb"
+                          />
                           <div className="alert-info">
                             <strong>{product.name}</strong>
                             <span>{alert.message}</span>
@@ -758,14 +1083,15 @@ export default function App() {
                             className="btn-draft"
                             onClick={() => resolveInventoryAlert(alert)}
                             disabled={isMutating}
-                            type="button"
-                          >
+                            type="button">
                             Taslak
                           </button>
                         </div>
                       );
                     })}
-                    {!activeAlerts.length && <Empty text="Tüm stok uyarıları çözüldü." />}
+                    {!activeAlerts.length && (
+                      <Empty text="Tüm stok uyarıları çözüldü." />
+                    )}
                   </div>
                 </section>
 
@@ -775,14 +1101,21 @@ export default function App() {
                       <p className="eyebrow">Kargo</p>
                       <h2>Gecikmeler</h2>
                     </div>
-                    <Truck size={18} className="section-icon" />
+                    <Truck
+                      size={18}
+                      className="section-icon"
+                    />
                   </div>
                   <div className="shipment-list">
                     {riskyShipments.map((shipment) => (
-                      <div className="shipment-row" key={shipment.id}>
+                      <div
+                        className="shipment-row"
+                        key={shipment.id}>
                         <div className="shipment-info">
                           <div className="shipment-top">
-                            <span className="order-num">#{shipment.orderId}</span>
+                            <span className="order-num">
+                              #{shipment.orderId}
+                            </span>
                             <StatusPill status={shipment.risk} />
                           </div>
                           <strong>{shipment.carrier}</strong>
@@ -792,8 +1125,7 @@ export default function App() {
                           className="btn-notify"
                           onClick={() => markShipmentNotified(shipment.orderId)}
                           disabled={isMutating}
-                          type="button"
-                        >
+                          type="button">
                           <UserRoundCheck size={14} /> Bildir
                         </button>
                       </div>
@@ -818,7 +1150,10 @@ export default function App() {
         )}
 
         {activePage === "customers" && (
-          <CustomersPage state={state} insights={insights} />
+          <CustomersPage
+            state={state}
+            insights={insights}
+          />
         )}
 
         {activePage === "orders" && (
@@ -848,7 +1183,9 @@ export default function App() {
       </div>
 
       {chatState === "closed" && !mockComposer && (
-        <div className="assistant-launcher" aria-label="Asistan kanalları">
+        <div
+          className="assistant-launcher"
+          aria-label="Asistan kanalları">
           <div className="channel-fabs">
             {botChannels.map((channel) => (
               <BotChannelButton
@@ -862,8 +1199,7 @@ export default function App() {
             className="chat-fab"
             onClick={() => setChatState("open")}
             aria-label="Sohbeti aç"
-            type="button"
-          >
+            type="button">
             <Bot size={22} />
             <span>AI Asistan</span>
             {messages.length > 2 && (
@@ -884,7 +1220,8 @@ export default function App() {
       )}
 
       {chatState !== "closed" && (
-        <div className={`chat-float${chatState === "minimized" ? " minimized" : ""}`}>
+        <div
+          className={`chat-float${chatState === "minimized" ? " minimized" : ""}`}>
           <div className="chat-float-header">
             <div className="chat-float-title">
               <div className="chat-avatar">
@@ -901,14 +1238,16 @@ export default function App() {
                   setChatState(chatState === "minimized" ? "open" : "minimized")
                 }
                 aria-label="Küçült"
-                type="button"
-              >
+                type="button">
                 <ChevronDown
                   size={16}
                   className={chatState === "minimized" ? "rotate-180" : ""}
                 />
               </button>
-              <button onClick={() => setChatState("closed")} aria-label="Kapat" type="button">
+              <button
+                onClick={() => setChatState("closed")}
+                aria-label="Kapat"
+                type="button">
                 <X size={16} />
               </button>
             </div>
@@ -922,15 +1261,19 @@ export default function App() {
                     key={message}
                     className="starter-chip"
                     onClick={() => setChatInput(message)}
-                    type="button"
-                  >
+                    type="button">
                     {message}
                   </button>
                 ))}
               </div>
-              <div className="chat-log" ref={chatLogRef} aria-live="polite">
+              <div
+                className="chat-log"
+                ref={chatLogRef}
+                aria-live="polite">
                 {messages.map((message) => (
-                  <div key={message.id} className={`bubble ${message.role}`}>
+                  <div
+                    key={message.id}
+                    className={`bubble ${message.role}`}>
                     <span className="bubble-role">
                       {message.role === "agent" ? "AI" : "Siz"}
                     </span>
@@ -947,7 +1290,9 @@ export default function App() {
                   </div>
                 )}
               </div>
-              <form className="chat-input-row" onSubmit={handleChatSubmit}>
+              <form
+                className="chat-input-row"
+                onSubmit={handleChatSubmit}>
                 <input
                   value={chatInput}
                   onChange={(event) => setChatInput(event.target.value)}
@@ -958,8 +1303,7 @@ export default function App() {
                 <button
                   type="submit"
                   disabled={isMutating || !chatInput.trim()}
-                  aria-label="Gönder"
-                >
+                  aria-label="Gönder">
                   <Send size={15} />
                 </button>
               </form>
@@ -969,13 +1313,14 @@ export default function App() {
       )}
 
       {draftModal && (
-        <div className="drawer-overlay" onClick={() => setDraftModal(null)}>
+        <div
+          className="drawer-overlay"
+          onClick={() => setDraftModal(null)}>
           <aside
             className="drawer"
             role="dialog"
             aria-modal="true"
-            onClick={(event) => event.stopPropagation()}
-          >
+            onClick={(event) => event.stopPropagation()}>
             <div className="drawer-header">
               <div>
                 <p className="eyebrow">{draftModal.subtitle}</p>
@@ -984,8 +1329,7 @@ export default function App() {
               <button
                 onClick={() => setDraftModal(null)}
                 aria-label="Kapat"
-                type="button"
-              >
+                type="button">
                 <X size={18} />
               </button>
             </div>
@@ -1009,12 +1353,13 @@ export default function App() {
               onChange={(event) => updateDraftBody(event.target.value)}
               aria-label="Gönderilecek mesaj içeriği"
             />
-            <div className="mock-send-grid" aria-label="Mock gönderim kanalları">
+            <div
+              className="mock-send-grid"
+              aria-label="Mock gönderim kanalları">
               <button
                 className="drawer-send whatsapp"
                 onClick={() => mockSendDraft("whatsapp")}
-                type="button"
-              >
+                type="button">
                 <MessageCircle size={15} />
                 <span>
                   WhatsApp
@@ -1024,8 +1369,7 @@ export default function App() {
               <button
                 className="drawer-send telegram"
                 onClick={() => mockSendDraft("telegram")}
-                type="button"
-              >
+                type="button">
                 <Send size={15} />
                 <span>
                   Telegram
@@ -1035,8 +1379,7 @@ export default function App() {
               <button
                 className="drawer-send email"
                 onClick={() => mockSendDraft("email")}
-                type="button"
-              >
+                type="button">
                 <Mail size={15} />
                 <span>
                   E-posta
@@ -1044,8 +1387,13 @@ export default function App() {
                 </span>
               </button>
             </div>
-            {draftNotice && <div className="mock-send-notice">{draftNotice}</div>}
-            <button className="btn-copy" onClick={copyDraft} type="button">
+            {draftNotice && (
+              <div className="mock-send-notice">{draftNotice}</div>
+            )}
+            <button
+              className="btn-copy"
+              onClick={copyDraft}
+              type="button">
               <Copy size={15} /> Kopyala
             </button>
           </aside>
@@ -1082,7 +1430,10 @@ function InsightCard({
         </div>
       </div>
       <p className="insight-summary">{summary}</p>
-      <button className="insight-btn" onClick={onAction} type="button">
+      <button
+        className="insight-btn"
+        onClick={onAction}
+        type="button">
         <ArrowUpRight size={14} />
         {buttonLabel}
       </button>
@@ -1102,8 +1453,7 @@ function BotChannelButton({
       className={`channel-fab ${channel.id}`}
       onClick={() => onOpen(channel.id)}
       type="button"
-      aria-label={`${channel.label} mock mesaj panelini aç`}
-    >
+      aria-label={`${channel.label} mock mesaj panelini aç`}>
       {channel.icon}
       <span>{channel.label}</span>
     </button>
@@ -1128,10 +1478,16 @@ function MockChannelComposer({
   );
   const title = getMockSendChannelLabel(composer.channel);
   const icon =
-    composer.channel === "whatsapp" ? <MessageCircle size={16} /> : <Send size={16} />;
+    composer.channel === "whatsapp" ? (
+      <MessageCircle size={16} />
+    ) : (
+      <Send size={16} />
+    );
 
   return (
-    <aside className={`mock-channel-panel ${composer.channel}`} aria-label={`${title} mock mesaj paneli`}>
+    <aside
+      className={`mock-channel-panel ${composer.channel}`}
+      aria-label={`${title} mock mesaj paneli`}>
       <div className="mock-channel-header">
         <div>
           <span className="mock-channel-icon">{icon}</span>
@@ -1140,7 +1496,10 @@ function MockChannelComposer({
             <span>Mock mesaj</span>
           </div>
         </div>
-        <button onClick={onClose} type="button" aria-label="Paneli kapat">
+        <button
+          onClick={onClose}
+          type="button"
+          aria-label="Paneli kapat">
           <X size={16} />
         </button>
       </div>
@@ -1152,10 +1511,11 @@ function MockChannelComposer({
           onChange={(event) =>
             onChange({ customerId: event.target.value, notice: "" })
           }
-          disabled={!customers.length}
-        >
+          disabled={!customers.length}>
           {customers.map((customer) => (
-            <option key={customer.id} value={customer.id}>
+            <option
+              key={customer.id}
+              value={customer.id}>
               {customer.name}
             </option>
           ))}
@@ -1179,14 +1539,15 @@ function MockChannelComposer({
         />
       </label>
 
-      {composer.notice && <div className="mock-send-notice">{composer.notice}</div>}
+      {composer.notice && (
+        <div className="mock-send-notice">{composer.notice}</div>
+      )}
 
       <button
         className={`mock-channel-send ${composer.channel}`}
         onClick={onSend}
         disabled={!selectedCustomer || !composer.message.trim()}
-        type="button"
-      >
+        type="button">
         {icon}
         Mock Gönder
       </button>
@@ -1241,7 +1602,9 @@ function StockPage({
                     : "green";
 
             return (
-              <div className="table-row stock-cols" key={product.id}>
+              <div
+                className="table-row stock-cols"
+                key={product.id}>
                 <strong>{product.name}</strong>
                 <span>
                   {product.stock} {product.unit}
@@ -1249,15 +1612,16 @@ function StockPage({
                 <span>
                   {Math.round(averageSales)} {product.unit}/gün
                 </span>
-                <span className={`days-left ${tone}`}>{daysLeft.toFixed(1)} gün</span>
+                <span className={`days-left ${tone}`}>
+                  {daysLeft.toFixed(1)} gün
+                </span>
                 <StatusPill status={tone} />
                 {daysLeft <= 7 ? (
                   <button
                     className="btn-draft-sm"
                     onClick={() => onDraft(product)}
                     disabled={disabled}
-                    type="button"
-                  >
+                    type="button">
                     Sipariş Taslağı
                   </button>
                 ) : (
@@ -1287,7 +1651,8 @@ function CustomersPage({
       .filter((order) => order.customerId === customer.id)
       .sort(
         (left, right) =>
-          new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
+          new Date(right.createdAt).getTime() -
+          new Date(left.createdAt).getTime(),
       );
     const latestOrder = customerOrders[0];
     const riskyShipment = state.shipments.find(
@@ -1299,7 +1664,11 @@ function CustomersPage({
     const followUpInsight = followUpInsights.find((insight) =>
       namesMatch(insight.entityName, customer.name),
     );
-    const status = followUpInsight ? "risky" : riskyShipment ? "watch" : "healthy";
+    const status = followUpInsight
+      ? "risky"
+      : riskyShipment
+        ? "watch"
+        : "healthy";
     const note =
       followUpInsight?.summary ??
       (riskyShipment
@@ -1338,7 +1707,9 @@ function CustomersPage({
             <span>Not</span>
           </div>
           {rows.map((row) => (
-            <div className="table-row customer-cols" key={row.id}>
+            <div
+              className="table-row customer-cols"
+              key={row.id}>
               <strong>{row.name}</strong>
               <span>{row.lastOrder}</span>
               <span>{row.channel}</span>
@@ -1369,7 +1740,9 @@ function OrdersPage({
     }
 
     if (filter === "Risk") {
-      const shipment = state.shipments.find((item) => item.orderId === order.id);
+      const shipment = state.shipments.find(
+        (item) => item.orderId === order.id,
+      );
       return (
         order.status === "delayed" ||
         shipment?.risk === "delayed" ||
@@ -1412,7 +1785,9 @@ function OrdersPage({
             );
 
             return (
-              <div className="table-row orders-cols" key={order.id}>
+              <div
+                className="table-row orders-cols"
+                key={order.id}>
                 <strong>#{order.id}</strong>
                 <span>{customer?.name}</span>
                 <StatusPill status={shipment?.risk ?? order.status} />
@@ -1424,7 +1799,9 @@ function OrdersPage({
               </div>
             );
           })}
-          {!visibleOrders.length && <Empty text="Bu filtre için sipariş yok." />}
+          {!visibleOrders.length && (
+            <Empty text="Bu filtre için sipariş yok." />
+          )}
         </div>
       </div>
     </div>
@@ -1495,13 +1872,17 @@ function MemoryPage({
           </div>
           <div className="evidence-list">
             {insights.map((insight) => (
-              <div className="evidence-card" key={insight.id}>
+              <div
+                className="evidence-card"
+                key={insight.id}>
                 <StatusPill status={insight.color} />
                 <div>
                   <h3>{insight.title}</h3>
                   <p>{insight.summary}</p>
                   {insight.evidence.map((item) => (
-                    <span key={item} className="ev-item">
+                    <span
+                      key={item}
+                      className="ev-item">
                       {item}
                     </span>
                   ))}
@@ -1528,7 +1909,9 @@ function MemoryPage({
           />
           <div className="record-list">
             {filteredRecords.map((record) => (
-              <div className="record-card" key={record.id}>
+              <div
+                className="record-card"
+                key={record.id}>
                 <div className="record-header">
                   <div className="record-tags">
                     <span className="category-tag">{record.category}</span>
@@ -1553,7 +1936,9 @@ function MemoryPage({
             </div>
             <Sparkles size={18} />
           </div>
-          <form className="memory-form" onSubmit={onMemoryIngest}>
+          <form
+            className="memory-form"
+            onSubmit={onMemoryIngest}>
             <textarea
               value={memoryInput}
               onChange={(event) => onMemoryInputChange(event.target.value)}
@@ -1564,8 +1949,7 @@ function MemoryPage({
             <button
               type="submit"
               className="btn-green"
-              disabled={isMutating || !memoryInput.trim()}
-            >
+              disabled={isMutating || !memoryInput.trim()}>
               <ArrowUpRight size={15} /> Hafızaya Kaydet
             </button>
           </form>
@@ -1582,17 +1966,125 @@ function MemoryPage({
           <div className="action-feed">
             {actions.length > 0 ? (
               actions.map((action) => (
-                <div className="action-item" key={action.id}>
+                <div
+                  className="action-item"
+                  key={action.id}>
                   <ArrowUpRight size={14} />
                   <span>{action.label}</span>
                 </div>
               ))
             ) : (
-              <Empty text="Henüz aksiyon yok." compact />
+              <Empty
+                text="Henüz aksiyon yok."
+                compact
+              />
             )}
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function SearchResultsMenu({
+  results,
+  query,
+  onSelect,
+}: {
+  results: SearchResult[];
+  query: string;
+  onSelect: (result: SearchResult) => void;
+}) {
+  const groups = searchKindOrder
+    .map((kind) => ({
+      kind,
+      results: results.filter((result) => result.kind === kind),
+    }))
+    .filter((group) => group.results.length > 0);
+
+  return (
+    <div
+      className="search-menu"
+      role="listbox"
+      aria-label="Arama sonuçları">
+      {groups.length > 0 ? (
+        groups.map((group) => (
+          <div
+            className="search-group"
+            key={group.kind}>
+            <div className="search-group-label">{searchKindLabels[group.kind]}</div>
+            {group.results.map((result) => (
+              <button
+                className="search-result-item"
+                key={result.id}
+                onClick={() => onSelect(result)}
+                type="button"
+                role="option">
+                <span className={`search-result-icon ${result.kind}`}>
+                  {searchResultIcon(result.kind)}
+                </span>
+                <span className="search-result-copy">
+                  <strong>{result.title}</strong>
+                  <span>{result.description}</span>
+                  <small>{result.meta}</small>
+                </span>
+              </button>
+            ))}
+          </div>
+        ))
+      ) : (
+        <div className="search-empty">
+          <Search size={18} />
+          <span>"{query.trim()}" için sonuç yok.</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NotificationPanel({
+  items,
+  onSelect,
+}: {
+  items: NotificationItem[];
+  onSelect: (item: NotificationItem) => void;
+}) {
+  return (
+    <div
+      className="notification-panel"
+      aria-label="Bildirimler">
+      <div className="notification-panel-header">
+        <div>
+          <p className="eyebrow">Bildirimler</p>
+          <strong>Aksiyon Bekleyenler</strong>
+        </div>
+        <span>{items.length}</span>
+      </div>
+      {items.length > 0 ? (
+        <div className="notification-list">
+          {items.map((item) => (
+            <button
+              className="notification-item"
+              key={item.id}
+              onClick={() => onSelect(item)}
+              type="button">
+              <span className={`notification-item-icon ${item.tone}`}>
+                {notificationItemIcon(item)}
+              </span>
+              <span className="notification-copy">
+                <strong>{item.title}</strong>
+                <span>{item.description}</span>
+                <small>{item.meta}</small>
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="notification-empty">
+          <CheckCircle2 size={20} />
+          <span>Aksiyon gerektiren bildirim yok.</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -1617,8 +2109,7 @@ function MetricCard({
       className={`metric-card ${color}`}
       onClick={onClick}
       type="button"
-      aria-label={`${label} sayfasına git`}
-    >
+      aria-label={`${label} sayfasına git`}>
       <div className="metric-icon">{icon}</div>
       <div className="metric-body">
         <span className="metric-label">{label}</span>
@@ -1639,15 +2130,16 @@ function SegCtrl({
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="seg-ctrl" role="tablist">
+    <div
+      className="seg-ctrl"
+      role="tablist">
       {options.map((option) => (
         <button
           key={option}
           className={value === option ? "active" : ""}
           onClick={() => onChange(option)}
           role="tab"
-          type="button"
-        >
+          type="button">
           {option}
         </button>
       ))}
@@ -1657,7 +2149,9 @@ function SegCtrl({
 
 function StatusPill({ status }: { status: string }) {
   return (
-    <span className={`pill ${status}`} role="status">
+    <span
+      className={`pill ${status}`}
+      role="status">
       {status}
     </span>
   );
@@ -1782,7 +2276,10 @@ function getDraftTargetKindLabel(kind: DraftTargetKind): string {
   return labels[kind];
 }
 
-function getDraftDestination(target: DraftTarget, channel: MockSendChannel): string {
+function getDraftDestination(
+  target: DraftTarget,
+  channel: MockSendChannel,
+): string {
   return channel === "email" ? target.email : target.phone;
 }
 
@@ -1853,7 +2350,10 @@ function isActionableInsight(
   insight: ProactiveInsight,
   state: OperationsState,
 ): boolean {
-  if (insight.color === "green" || insight.actionType === "memory_insight_generated") {
+  if (
+    insight.color === "green" ||
+    insight.actionType === "memory_insight_generated"
+  ) {
     return false;
   }
 
@@ -1874,6 +2374,378 @@ function isActionableInsight(
   return state.inventoryAlerts.some(
     (alert) => !alert.resolved && alert.productId === product.id,
   );
+}
+
+function buildGlobalSearchResults({
+  state,
+  messages,
+  insights,
+  memoryRecords,
+  query,
+}: {
+  state: OperationsState;
+  messages: ChatMessage[];
+  insights: ProactiveInsight[];
+  memoryRecords: MemoryRecord[];
+  query: string;
+}): SearchResult[] {
+  const normalizedQuery = normalizeSearch(query);
+
+  if (!normalizedQuery) {
+    return [];
+  }
+
+  const activeAlerts = state.inventoryAlerts.filter((alert) => !alert.resolved);
+  const alertsByProduct = new Map(
+    activeAlerts.map((alert) => [alert.productId, alert]),
+  );
+  const customersById = new Map(
+    state.customers.map((customer) => [customer.id, customer]),
+  );
+  const shipmentsByOrder = new Map(
+    state.shipments.map((shipment) => [shipment.orderId, shipment]),
+  );
+  const results: SearchResult[] = [];
+
+  function add(result: SearchResult) {
+    if (matchesSearchResult(result, normalizedQuery)) {
+      results.push(result);
+    }
+  }
+
+  state.products.forEach((product) => {
+    const alert = alertsByProduct.get(product.id);
+    add({
+      id: `product-${product.id}`,
+      kind: "product",
+      title: product.name,
+      description: `${product.category} · ${product.supplier}`,
+      meta: `SKU ${product.sku} · ${product.stock}/${product.threshold} ${product.unit}`,
+      keywords: [
+        "ürün product stok stock",
+        alert?.severity === "critical" ? "kritik critical" : "",
+        alert?.message ?? "",
+      ],
+      target: { type: "page", page: "stock" },
+    });
+  });
+
+  state.customers.forEach((customer) => {
+    add({
+      id: `customer-${customer.id}`,
+      kind: "customer",
+      title: customer.name,
+      description: `${customer.channel} · ${customer.phone}`,
+      meta: "Müşteri kaydı",
+      keywords: ["müşteri customer takip follow-up"],
+      target: { type: "page", page: "customers" },
+    });
+  });
+
+  state.orders.forEach((order) => {
+    const customer = customersById.get(order.customerId);
+    const shipment = shipmentsByOrder.get(order.id);
+    const shipmentRisk = shipment?.risk === "delayed" || shipment?.risk === "watch";
+    const ordersFilter =
+      order.status === "delayed" || shipmentRisk
+        ? "Risk"
+        : order.dueToday
+          ? "Bugün"
+          : "Tümü";
+
+    add({
+      id: `order-${order.id}`,
+      kind: "order",
+      title: `Sipariş #${order.id}`,
+      description: `${customer?.name ?? "Müşteri"} · ${summarizeItems(order, state)}`,
+      meta: `${order.status} · ${formatCurrency(order.total)} · ${formatDate(order.createdAt)}`,
+      keywords: [
+        "sipariş order",
+        order.dueToday ? "bugün today teslim" : "",
+        shipment?.trackingCode ?? "",
+        shipment?.carrier ?? "",
+        shipment?.lastScan ?? "",
+      ],
+      target: { type: "page", page: "orders", ordersFilter },
+    });
+  });
+
+  state.shipments.forEach((shipment) => {
+    const order = state.orders.find((candidate) => candidate.id === shipment.orderId);
+    const customer = order ? customersById.get(order.customerId) : undefined;
+
+    add({
+      id: `shipment-${shipment.id}`,
+      kind: "shipment",
+      title: shipment.trackingCode,
+      description: `#${shipment.orderId} · ${shipment.carrier} · ${customer?.name ?? "Müşteri"}`,
+      meta: `${shipment.risk} · ${shipment.eta} · ${shipment.city}`,
+      keywords: [
+        "takip tracking kargo shipment",
+        shipment.lastScan,
+        shipment.notified ? "bildirildi" : "bildirim bekliyor",
+      ],
+      target: {
+        type: "page",
+        page: "orders",
+        ordersFilter: shipment.risk === "clear" ? "Tümü" : "Risk",
+      },
+    });
+  });
+
+  messages.forEach((message) => {
+    add({
+      id: `message-${message.id}`,
+      kind: "message",
+      title: message.role === "customer" ? "Müşteri mesajı" : "Asistan mesajı",
+      description: compactText(message.text, 120),
+      meta: message.timestamp,
+      keywords: ["mesaj message sohbet chat"],
+      target: { type: "chat" },
+    });
+  });
+
+  activeAlerts.forEach((alert) => {
+    const product = state.products.find(
+      (candidate) => candidate.id === alert.productId,
+    );
+
+    add({
+      id: `alert-${alert.productId}`,
+      kind: "alert",
+      title: `${product?.name ?? alert.productId} stok ${alert.severity}`,
+      description: alert.message,
+      meta: alert.severity === "critical" ? "Kritik stok" : "Stok uyarısı",
+      keywords: ["stok stock kritik critical uyarı alert"],
+      target: { type: "page", page: "stock" },
+    });
+  });
+
+  state.tasks.forEach((task) => {
+    add({
+      id: `task-${task.id}`,
+      kind: "task",
+      title: task.title,
+      description: `${task.owner}${task.orderId ? ` · Sipariş ${task.orderId}` : ""}`,
+      meta: `${task.priority} · ${task.status}`,
+      keywords: ["görev task aksiyon action"],
+      target: { type: "page", page: "dashboard" },
+    });
+  });
+
+  insights.forEach((insight) => {
+    add({
+      id: `insight-${insight.id}`,
+      kind: "insight",
+      title: insight.title,
+      description: compactText(insight.summary, 120),
+      meta: `${insight.entityName} · ${insight.color}`,
+      keywords: [
+        "içgörü insight uyarı alert proaktif",
+        insight.evidence.join(" "),
+        insight.draftAction,
+      ],
+      target: {
+        type: "page",
+        page: "memory",
+        memorySearch: query.trim(),
+      },
+    });
+  });
+
+  memoryRecords.forEach((record) => {
+    add({
+      id: `memory-${record.id}`,
+      kind: "memory",
+      title: record.entityName ?? record.category,
+      description: compactText(record.text, 120),
+      meta: `${record.category} · ${record.eventDate ?? "tarihsiz"}`,
+      keywords: ["hafıza memory kayıt record"],
+      target: {
+        type: "page",
+        page: "memory",
+        memorySearch: query.trim(),
+      },
+    });
+  });
+
+  return results
+    .sort((left, right) => {
+      const leftScore = scoreSearchResult(left, normalizedQuery);
+      const rightScore = scoreSearchResult(right, normalizedQuery);
+
+      return (
+        leftScore - rightScore ||
+        searchKindOrder.indexOf(left.kind) - searchKindOrder.indexOf(right.kind)
+      );
+    })
+    .slice(0, 24);
+}
+
+function buildNotificationItems(
+  state: OperationsState,
+  actionableInsights: ProactiveInsight[],
+): NotificationItem[] {
+  const customersById = new Map(
+    state.customers.map((customer) => [customer.id, customer]),
+  );
+  const ordersById = new Map(state.orders.map((order) => [order.id, order]));
+  const productsById = new Map(
+    state.products.map((product) => [product.id, product]),
+  );
+  const items: NotificationItem[] = [];
+
+  state.inventoryAlerts
+    .filter((alert) => !alert.resolved && alert.severity === "critical")
+    .forEach((alert) => {
+      const product = productsById.get(alert.productId);
+      items.push({
+        id: `stock-${alert.productId}`,
+        tone: "red",
+        title: `${product?.name ?? alert.productId} kritik stok`,
+        description: alert.message,
+        meta: product
+          ? `${product.stock}/${product.threshold} ${product.unit}`
+          : "Stok kontrolü",
+        action: { type: "stock", productId: alert.productId },
+      });
+    });
+
+  state.shipments
+    .filter((shipment) => shipment.risk !== "clear" && !shipment.notified)
+    .forEach((shipment) => {
+      const order = ordersById.get(shipment.orderId);
+      const customer = order ? customersById.get(order.customerId) : undefined;
+      items.push({
+        id: `shipment-${shipment.id}`,
+        tone: shipment.risk === "delayed" ? "red" : "orange",
+        title: `Kargo riski: #${shipment.orderId}`,
+        description: `${shipment.carrier} · ${shipment.trackingCode}`,
+        meta: customer
+          ? `${customer.name} · ${shipment.lastScan}`
+          : shipment.lastScan,
+        action: { type: "shipment" },
+      });
+    });
+
+  state.orders
+    .filter((order) => order.dueToday && order.status !== "delivered")
+    .forEach((order) => {
+      const customer = customersById.get(order.customerId);
+      items.push({
+        id: `order-${order.id}`,
+        tone: "blue",
+        title: `Bugün teslim: #${order.id}`,
+        description: `${customer?.name ?? "Müşteri"} · ${summarizeItems(order, state)}`,
+        meta: `${order.status} · ${formatCurrency(order.total)}`,
+        action: { type: "order" },
+      });
+    });
+
+  actionableInsights
+    .filter((insight) => insight.actionType === "create_customer_reminder_draft")
+    .forEach((insight) => {
+      items.push({
+        id: `insight-${insight.id}`,
+        tone: "yellow",
+        title: insight.title,
+        description: compactText(insight.summary, 100),
+        meta: `${insight.entityName} · müşteri takibi`,
+        action: { type: "insight", insightId: insight.id },
+      });
+    });
+
+  state.tasks
+    .filter((task) => task.status === "open" && task.priority === "high")
+    .forEach((task) => {
+      items.push({
+        id: `task-${task.id}`,
+        tone: "red",
+        title: task.title,
+        description: `${task.owner}${task.orderId ? ` · Sipariş ${task.orderId}` : ""}`,
+        meta: "Yüksek öncelik",
+        action: { type: "task" },
+      });
+    });
+
+  return items;
+}
+
+function matchesSearchResult(result: SearchResult, normalizedQuery: string): boolean {
+  const haystack = normalizeSearch(
+    [result.title, result.description, result.meta, ...result.keywords].join(" "),
+  );
+
+  return normalizedQuery
+    .split(" ")
+    .filter(Boolean)
+    .every((part) => haystack.includes(part));
+}
+
+function scoreSearchResult(result: SearchResult, normalizedQuery: string): number {
+  const title = normalizeSearch(result.title);
+  const description = normalizeSearch(result.description);
+
+  if (title.startsWith(normalizedQuery)) {
+    return 0;
+  }
+
+  if (title.includes(normalizedQuery)) {
+    return 1;
+  }
+
+  if (description.includes(normalizedQuery)) {
+    return 2;
+  }
+
+  return 3;
+}
+
+function normalizeSearch(value: string): string {
+  const replacements: Record<string, string> = {
+    ç: "c",
+    ğ: "g",
+    ı: "i",
+    ö: "o",
+    ş: "s",
+    ü: "u",
+  };
+
+  return value
+    .toLocaleLowerCase("tr")
+    .replace(/[çğıöşü]/g, (char) => replacements[char] ?? char)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function searchResultIcon(kind: SearchResultKind): ReactNode {
+  const icons: Record<SearchResultKind, ReactNode> = {
+    product: <Warehouse size={15} />,
+    customer: <Users size={15} />,
+    order: <ShoppingBag size={15} />,
+    shipment: <Truck size={15} />,
+    message: <MessageSquareText size={15} />,
+    alert: <AlertTriangle size={15} />,
+    task: <ClipboardList size={15} />,
+    insight: <Sparkles size={15} />,
+    memory: <History size={15} />,
+  };
+
+  return icons[kind];
+}
+
+function notificationItemIcon(item: NotificationItem): ReactNode {
+  const icons: Record<NotificationAction["type"], ReactNode> = {
+    stock: <AlertTriangle size={15} />,
+    shipment: <Truck size={15} />,
+    order: <ShoppingBag size={15} />,
+    insight: <Users size={15} />,
+    task: <ClipboardList size={15} />,
+  };
+
+  return icons[item.action.type];
 }
 
 function summarizeItems(order: Order, state: OperationsState): string {
@@ -1936,7 +2808,9 @@ function formatTodayLabel(date: Date): string {
     month: "long",
     year: "numeric",
   }).formatToParts(date);
-  const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const byType = Object.fromEntries(
+    parts.map((part) => [part.type, part.value]),
+  );
   const weekday = byType.weekday
     ? byType.weekday.charAt(0).toLocaleUpperCase("tr") + byType.weekday.slice(1)
     : "";
@@ -1964,9 +2838,15 @@ function compactText(value: string, maxLength: number): string {
 
 function namesMatch(left: string, right: string): boolean {
   const normalize = (value: string) =>
-    value.toLocaleLowerCase("tr").replace(/[^\w\s]/g, "").trim();
+    value
+      .toLocaleLowerCase("tr")
+      .replace(/[^\w\s]/g, "")
+      .trim();
 
-  return normalize(left).includes(normalize(right)) || normalize(right).includes(normalize(left));
+  return (
+    normalize(left).includes(normalize(right)) ||
+    normalize(right).includes(normalize(left))
+  );
 }
 
 function getErrorMessage(error: unknown): string {

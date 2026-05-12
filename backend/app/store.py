@@ -45,7 +45,7 @@ INITIAL_STATE = OperationsState(
             threshold=30,
             unit="kavanoz",
             supplier="Selçuk Mutfağı",
-            image="https://images.unsplash.com/photo-1607487998981-8d44fca90343?auto=format&fit=crop&w=480&q=80",
+            image="https://images.unsplash.com/photo-1546948630-50a0af017138?q=80&w=987&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
             weeklySales=[18, 22, 19, 24, 27, 29, 31],
         ),
         Product(
