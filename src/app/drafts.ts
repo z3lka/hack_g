@@ -92,7 +92,7 @@ function buildDraftTarget(
   kind: DraftTargetKind,
   phone?: string,
 ): DraftTarget {
-  const targetName = name.trim() || "Mock Alıcı";
+  const targetName = name.trim() || "Alıcı";
 
   return {
     name: targetName,
@@ -140,7 +140,7 @@ function toContactSlug(value: string): string {
     .replace(/[^a-z0-9]+/g, ".")
     .replace(/^\.+|\.+$/g, "");
 
-  return slug || "mock";
+  return slug || "alici";
 }
 
 function hashText(value: string): number {

@@ -1,7 +1,7 @@
 import { Bot, ChevronDown, Mail, MessageCircle, Send, X } from "lucide-react";
 import type { FormEventHandler, RefObject } from "react";
 import { getMockSendChannelLabel } from "../app/drafts";
-import { starterMessages } from "../app/constants";
+import { initialMessages, starterMessages } from "../app/constants";
 import type {
   ChatState,
   ExternalBotChannel,
@@ -27,6 +27,10 @@ const botChannels: ExternalBotChannel[] = [
     icon: <Mail size={17} />,
   },
 ];
+
+const placeholderMessageIds = new Set(
+  initialMessages.map((message) => message.id),
+);
 
 export function FloatingAssistant({
   chatState,
@@ -61,6 +65,16 @@ export function FloatingAssistant({
   onChatInputChange: (value: string) => void;
   onChatSubmit: FormEventHandler<HTMLFormElement>;
 }) {
+  const hasChatInput = chatInput.trim().length > 0;
+  const hasUserConversation = messages.some(
+    (message) => !placeholderMessageIds.has(message.id),
+  );
+  const shouldHidePlaceholders = hasChatInput || hasUserConversation;
+  const visibleMessages = shouldHidePlaceholders
+    ? messages.filter((message) => !placeholderMessageIds.has(message.id))
+    : messages;
+  const showStarterMessages = !shouldHidePlaceholders;
+
   if (chatState === "closed" && !mockComposer) {
     return (
       <div
@@ -138,32 +152,38 @@ export function FloatingAssistant({
 
       {chatState === "open" && (
         <>
-          <div className="chat-starters">
-            {starterMessages.map((message) => (
-              <button
-                key={message}
-                className="starter-chip"
-                onClick={() => onChatInputChange(message)}
-                type="button">
-                {message}
-              </button>
-            ))}
-          </div>
+          {showStarterMessages && (
+            <div className="chat-starters">
+              {starterMessages.map((message) => (
+                <button
+                  key={message}
+                  className="starter-chip"
+                  onClick={() => onChatInputChange(message)}
+                  type="button">
+                  {message}
+                </button>
+              ))}
+            </div>
+          )}
           <div
             className="chat-log"
             ref={chatLogRef}
             aria-live="polite">
-            {messages.map((message) => (
-              <div
-                key={message.id}
-                className={`bubble ${message.role}`}>
-                <span className="bubble-role">
-                  {message.role === "agent" ? "AI" : "Siz"}
-                </span>
-                <p>{message.text}</p>
-                <time>{message.timestamp}</time>
-              </div>
-            ))}
+            {visibleMessages.map((message) => {
+              const isPlaceholder = placeholderMessageIds.has(message.id);
+
+              return (
+                <div
+                  key={message.id}
+                  className={`bubble ${message.role}${isPlaceholder ? " placeholder" : ""}`}>
+                  <span className="bubble-role">
+                    {message.role === "agent" ? "AI" : "Siz"}
+                  </span>
+                  <p>{message.text}</p>
+                  <time>{message.timestamp}</time>
+                </div>
+              );
+            })}
             {isResponding && (
               <div className="bubble agent typing">
                 <span className="bubble-role">AI</span>
@@ -208,7 +228,7 @@ function BotChannelButton({
       className={`channel-fab ${channel.id}`}
       onClick={() => onOpen(channel.id)}
       type="button"
-      aria-label={`${channel.label} mock mesaj panelini aç`}>
+      aria-label={`${channel.label} mesaj panelini aç`}>
       {channel.icon}
       <span>{channel.label}</span>
     </button>
@@ -242,19 +262,19 @@ function MockChannelComposer({
     );
   const destination =
     composer.channel === "email"
-      ? (selectedCustomer?.email ?? "Mock e-posta yok")
-      : (selectedCustomer?.phone ?? "Mock telefon yok");
+      ? (selectedCustomer?.email ?? "E-posta yok")
+      : (selectedCustomer?.phone ?? "Telefon yok");
 
   return (
     <aside
       className={`mock-channel-panel ${composer.channel}`}
-      aria-label={`${title} mock mesaj paneli`}>
+      aria-label={`${title} mesaj paneli`}>
       <div className="mock-channel-header">
         <div>
           <span className="mock-channel-icon">{icon}</span>
           <div>
             <strong>{title}</strong>
-            <span>Mock mesaj</span>
+            <span>Mesaj</span>
           </div>
         </div>
         <button
@@ -309,7 +329,7 @@ function MockChannelComposer({
             onChange({ message: event.target.value, notice: "" })
           }
           rows={5}
-          aria-label={`${title} mock mesaj içeriği`}
+          aria-label={`${title} mesaj içeriği`}
         />
       </label>
 
@@ -323,7 +343,7 @@ function MockChannelComposer({
         disabled={!selectedCustomer || !composer.message.trim()}
         type="button">
         {icon}
-        Mock Gönder
+        Gönder
       </button>
     </aside>
   );

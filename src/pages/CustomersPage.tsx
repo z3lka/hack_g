@@ -1,5 +1,6 @@
 import type { OperationsState, ProactiveInsight } from "../types";
 import { formatDate, namesMatch } from "../app/format";
+import { labelStatus } from "../app/labels";
 import { Empty, StatusPill } from "../components/common";
 
 export function CustomersPage({
@@ -40,7 +41,7 @@ export function CustomersPage({
       (riskyShipment
         ? `Kargo riski: sipariş ${riskyShipment.orderId}`
         : latestOrder
-          ? `Son sipariş ${latestOrder.id} - ${latestOrder.status}`
+          ? `Son sipariş ${latestOrder.id} - ${labelStatus(latestOrder.status)}`
           : "Henüz sipariş yok");
 
     return {

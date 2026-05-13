@@ -12,6 +12,7 @@ import {
   normalizeSearch,
   summarizeItems,
 } from "./format";
+import { labelIntent, labelPriority, labelStatus } from "./labels";
 import type { SearchResult, SearchResultKind } from "./uiTypes";
 
 export const searchKindOrder: SearchResultKind[] = [
@@ -127,7 +128,7 @@ export function buildGlobalSearchResults({
       kind: "order",
       title: `Sipariş #${order.id}`,
       description: `${customer?.name ?? "Müşteri"} · ${summarizeItems(order, state)}`,
-      meta: `${order.status} · ${formatCurrency(order.total)} · ${formatDate(order.createdAt)}`,
+      meta: `${labelStatus(order.status)} · ${formatCurrency(order.total)} · ${formatDate(order.createdAt)}`,
       keywords: [
         "sipariş order",
         order.dueToday ? "bugün today teslim" : "",
@@ -150,7 +151,7 @@ export function buildGlobalSearchResults({
       kind: "shipment",
       title: shipment.trackingCode,
       description: `#${shipment.orderId} · ${shipment.carrier} · ${customer?.name ?? "Müşteri"}`,
-      meta: `${shipment.risk} · ${shipment.eta} · ${shipment.city}`,
+      meta: `${labelStatus(shipment.risk)} · ${shipment.eta} · ${shipment.city}`,
       keywords: [
         "takip tracking kargo shipment",
         shipment.lastScan,
@@ -170,7 +171,7 @@ export function buildGlobalSearchResults({
       kind: "issue",
       title: issue.title,
       description: issue.message,
-      meta: `${issue.severity} · ${issue.source}`,
+      meta: `${labelStatus(issue.severity)} · ${issue.source}`,
       keywords: [
         "hata error issue problem uyarı warning operasyon",
         issue.category,
@@ -202,8 +203,10 @@ export function buildGlobalSearchResults({
       id: `thread-${thread.id}`,
       kind: "thread",
       title: `${thread.customerName} · ${thread.subject}`,
-      description: compactText(latestMessage?.body ?? "Email thread", 120),
-      meta: `${thread.status} · ${latestDraft?.intent ?? "unknown"}`,
+      description: compactText(latestMessage?.body ?? "E-posta konuşması", 120),
+      meta: `${labelStatus(thread.status)} · ${
+        latestDraft ? labelIntent(latestDraft.intent) : "Bilinmiyor"
+      }`,
       keywords: [
         "email inbox gelen kutusu müşteri mesaj",
         thread.customerEmail,
@@ -222,7 +225,7 @@ export function buildGlobalSearchResults({
     add({
       id: `alert-${alert.productId}`,
       kind: "alert",
-      title: `${product?.name ?? alert.productId} stok ${alert.severity}`,
+      title: `${product?.name ?? alert.productId} stok ${labelStatus(alert.severity)}`,
       description: alert.message,
       meta: alert.severity === "critical" ? "Kritik stok" : "Stok uyarısı",
       keywords: ["stok stock kritik critical uyarı alert"],
@@ -236,7 +239,7 @@ export function buildGlobalSearchResults({
       kind: "task",
       title: task.title,
       description: `${task.owner}${task.orderId ? ` · Sipariş ${task.orderId}` : ""}`,
-      meta: `${task.priority} · ${task.status}`,
+      meta: `${labelPriority(task.priority)} · ${labelStatus(task.status)}`,
       keywords: ["görev task aksiyon action"],
       target: { type: "page", page: "dashboard" },
     });
@@ -248,7 +251,7 @@ export function buildGlobalSearchResults({
       kind: "insight",
       title: insight.title,
       description: compactText(insight.summary, 120),
-      meta: `${insight.entityName} · ${insight.color}`,
+      meta: `${insight.entityName} · ${labelStatus(insight.color)}`,
       keywords: [
         "içgörü insight uyarı alert proaktif",
         insight.evidence.join(" "),

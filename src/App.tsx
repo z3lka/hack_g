@@ -33,7 +33,7 @@ export default function App() {
         memoryStatus={app.memoryStatus}
         llmMode={app.llmMode}
         isMutating={app.isMutating}
-        onNavigate={app.setActivePage}
+        onNavigate={app.navigate}
         onToggleCollapsed={app.toggleSidebar}
         onGeneratePlan={app.handleGeneratePlan}
       />

@@ -1,5 +1,6 @@
 import { CheckCircle2 } from "lucide-react";
 import type { ReactNode } from "react";
+import { labelPriority, labelStatus } from "../app/labels";
 
 export function MetricCard({
   icon,
@@ -64,13 +65,13 @@ export function StatusPill({ status }: { status: string }) {
     <span
       className={`pill ${status}`}
       role="status">
-      {status}
+      {labelStatus(status)}
     </span>
   );
 }
 
 export function PriorityTag({ priority }: { priority: string }) {
-  return <span className={`priority ${priority}`}>{priority}</span>;
+  return <span className={`priority ${priority}`}>{labelPriority(priority)}</span>;
 }
 
 export function Empty({ text, compact }: { text: string; compact?: boolean }) {

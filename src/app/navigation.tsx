@@ -45,7 +45,7 @@ export function navLabel(page: PageView): string {
 export function pageTitle(page: PageView): string {
   const titles: Record<PageView, string> = {
     dashboard: "Bugünün Özeti",
-    inbox: "Email Gelen Kutusu",
+    inbox: "E-posta Gelen Kutusu",
     stock: "Stok Yönetimi",
     customers: "Müşteriler",
     orders: "Siparişler",

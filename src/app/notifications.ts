@@ -1,5 +1,6 @@
 import type { OperationsState, ProactiveInsight } from "../types";
 import { compactText, formatCurrency, summarizeItems } from "./format";
+import { labelStatus } from "./labels";
 import type { NotificationItem } from "./uiTypes";
 
 export function buildNotificationItems(
@@ -70,7 +71,7 @@ export function buildNotificationItems(
         tone: "blue",
         title: `Bugün teslim: #${order.id}`,
         description: `${customer?.name ?? "Müşteri"} · ${summarizeItems(order, state)}`,
-        meta: `${order.status} · ${formatCurrency(order.total)}`,
+        meta: `${labelStatus(order.status)} · ${formatCurrency(order.total)}`,
         action: { type: "order" },
       });
     });

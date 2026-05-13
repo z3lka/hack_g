@@ -156,6 +156,10 @@ export function useOperationsController() {
     }
 
     setActivePage(page);
+
+    if (page === "inbox") {
+      void handleInboxSync();
+    }
   }
 
   function toggleSidebar() {
@@ -222,7 +226,7 @@ export function useOperationsController() {
       setMemorySearch(result.target.memorySearch);
     }
 
-    setActivePage(result.target.page);
+    navigate(result.target.page, result.target.ordersFilter);
   }
 
   function handleNotificationSelect(item: NotificationItem) {
@@ -318,6 +322,7 @@ export function useOperationsController() {
 
     try {
       await runMutation(async () => {
+        await delay(1000);
         const response = await sendCustomerMessage(messageText);
         setMessages((current) => [
           ...current.map((message) =>
@@ -525,7 +530,7 @@ export function useOperationsController() {
         name: contactDraft.customerName,
         kind: "customer",
         phone: contactDraft.phone,
-        email: contactDraft.email ?? "Mock e-posta yok",
+        email: contactDraft.email ?? "E-posta yok",
       },
       recommendedChannel: contactDraft.recommendedChannel,
       confidence: contactDraft.confidence,
@@ -540,7 +545,7 @@ export function useOperationsController() {
 
     await navigator.clipboard.writeText(
       draftModal.subject
-        ? `Subject: ${draftModal.subject}\n\n${draftModal.body}`
+        ? `Konu: ${draftModal.subject}\n\n${draftModal.body}`
         : draftModal.body,
     );
     prependActions([
@@ -570,13 +575,13 @@ export function useOperationsController() {
 
     const destination = getDraftDestination(draftModal.target, channel);
     const channelLabel = getMockSendChannelLabel(channel);
-    const notice = `${channelLabel} mock gönderim: ${destination}`;
+    const notice = `${channelLabel} gönderildi: ${destination}`;
 
     setDraftNotice(notice);
     prependActions([
       {
         id: crypto.randomUUID(),
-        label: `${channelLabel} ile mock gönderildi: ${draftModal.target.name} (${destination})`,
+        label: `${channelLabel} ile gönderildi: ${draftModal.target.name} (${destination})`,
         type: "mock_send_message",
         payload: {
           channel,
@@ -622,15 +627,15 @@ export function useOperationsController() {
     const channelLabel = getMockSendChannelLabel(mockComposer.channel);
     const destination =
       mockComposer.channel === "email"
-        ? (customer.email ?? "Mock e-posta yok")
+        ? (customer.email ?? "E-posta yok")
         : customer.phone;
-    const notice = `${channelLabel} mock gönderim: ${customer.name} (${destination})`;
+    const notice = `${channelLabel} gönderildi: ${customer.name} (${destination})`;
 
     setMockComposer({ ...mockComposer, notice });
     prependActions([
       {
         id: crypto.randomUUID(),
-        label: `${channelLabel} mock mesaj gönderildi: ${customer.name}`,
+        label: `${channelLabel} mesajı gönderildi: ${customer.name}`,
         type: "mock_send_message",
         payload: {
           channel: mockComposer.channel,
@@ -733,4 +738,8 @@ function createLocalChatMessage(
       minute: "2-digit",
     }),
   };
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }

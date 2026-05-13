@@ -1,5 +1,6 @@
 import { Copy, Mail, MessageCircle, Send, X } from "lucide-react";
 import { getDraftTargetKindLabel, getMockSendChannelLabel } from "../app/drafts";
+import { labelReviewReason } from "../app/labels";
 import type { DraftModal, MockSendChannel } from "../app/uiTypes";
 
 export function DraftDrawer({
@@ -79,12 +80,12 @@ export function DraftDrawer({
         {draft.reviewReason && (
           <div className="draft-review-note">
             <strong>{Math.round((draft.confidence ?? 0) * 100)}%</strong>
-            <span>{draft.reviewReason}</span>
+            <span>{labelReviewReason(draft.reviewReason)}</span>
           </div>
         )}
         <div
           className="mock-send-grid"
-          aria-label="Mock gönderim kanalları">
+          aria-label="Gönderim kanalları">
           <button
             className={`drawer-send whatsapp${draft.recommendedChannel === "whatsapp" ? " recommended" : ""}`}
             onClick={() => onMockSend("whatsapp")}

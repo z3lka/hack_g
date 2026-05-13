@@ -7,12 +7,12 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { formatTime, summarizeItems } from "../app/format";
+import { labelIntent, labelReviewReason, labelStatus } from "../app/labels";
 import { Empty, StatusPill } from "../components/common";
 import type {
   AssistantDraft,
   ConnectorHealth,
   CustomerThread,
-  MessageIntent,
   OperationsState,
 } from "../types";
 
@@ -61,8 +61,8 @@ export function InboxPage({
     <div className="page-content inbox-page">
       <div className="inbox-toolbar">
         <div>
-          <p className="eyebrow">Email Assistant</p>
-          <h2>Customer Inbox</h2>
+          <p className="eyebrow">E-posta Asistanı</p>
+          <h2>Müşteri Gelen Kutusu</h2>
         </div>
         <div className="inbox-toolbar-actions">
           <ConnectorHealthStrip items={connectorHealth} />
@@ -72,7 +72,7 @@ export function InboxPage({
             disabled={disabled}
             type="button">
             <RefreshCw size={15} />
-            Sync Inbox
+            Mail Senkronize Et
           </button>
         </div>
       </div>
@@ -97,18 +97,18 @@ export function InboxPage({
                   <time>{formatTime(thread.lastMessageAt)}</time>
                 </div>
                 <span className="thread-subject">{thread.subject}</span>
-                <p>{message?.body ?? "No inbound message"}</p>
+                <p>{message?.body ?? "Gelen mesaj yok"}</p>
                 <div className="thread-meta">
                   <StatusPill status={thread.status} />
-                  <span>{draft ? labelIntent(draft.intent) : "No draft"}</span>
-                  {thread.unread && <i>Unread</i>}
+                  <span>{draft ? labelIntent(draft.intent) : "Taslak yok"}</span>
+                  {thread.unread && <i>Okunmadı</i>}
                 </div>
               </button>
             );
           })}
           {!threads.length && (
             <div className="inbox-empty">
-              <Empty text="Henüz email mesajı yok. Sync ile demo veya IMAP inbox okunur." />
+              <Empty text="Henüz e-posta mesajı yok. Senkronizasyon ile gelen kutusu okunur." />
             </div>
           )}
         </aside>
@@ -129,13 +129,13 @@ export function InboxPage({
               <div className="email-message-panel">
                 <div className="email-panel-title">
                   <Inbox size={16} />
-                  <strong>Inbound Message</strong>
+                  <strong>Gelen Mesaj</strong>
                 </div>
                 <div className="email-message-meta">
                   <span>{activeThread.customerName}</span>
                   <time>{latestMessage ? formatTime(latestMessage.receivedAt) : "-"}</time>
                 </div>
-                <p>{latestMessage?.body ?? "No inbound body"}</p>
+                <p>{latestMessage?.body ?? "Mesaj içeriği yok"}</p>
               </div>
 
               {latestDraft ? (
@@ -143,13 +143,13 @@ export function InboxPage({
                   <div className="draft-panel-header">
                     <div>
                       <p className="eyebrow">{labelIntent(latestDraft.intent)}</p>
-                      <h3>Human Review Draft</h3>
+                      <h3>Kontrol Taslağı</h3>
                     </div>
                     <DraftStatusBadge draft={latestDraft} />
                   </div>
 
                   <div className="draft-confidence">
-                    <span>Confidence</span>
+                    <span>Güven</span>
                     <strong>{Math.round(latestDraft.confidence * 100)}%</strong>
                     <div>
                       <i style={{ width: `${Math.round(latestDraft.confidence * 100)}%` }} />
@@ -168,19 +168,19 @@ export function InboxPage({
                     ))}
                     {!linked.length && (
                       <div className="linked-context-item muted">
-                        <span>Linked Data</span>
-                        <strong>No linked order, product, or customer</strong>
+                        <span>Bağlı Veri</span>
+                        <strong>Bağlı sipariş, ürün veya müşteri yok</strong>
                       </div>
                     )}
                   </div>
 
                   <div className="review-note">
                     <MailCheck size={15} />
-                    <span>{latestDraft.requiredReviewReason}</span>
+                    <span>{labelReviewReason(latestDraft.requiredReviewReason)}</span>
                   </div>
 
                   <label className="draft-edit-field">
-                    <span>Subject</span>
+                    <span>Konu</span>
                     <input
                       value={draftSubject}
                       onChange={(event) => setDraftSubject(event.target.value)}
@@ -188,7 +188,7 @@ export function InboxPage({
                     />
                   </label>
                   <label className="draft-edit-field">
-                    <span>Draft</span>
+                    <span>Taslak</span>
                     <textarea
                       value={draftBody}
                       onChange={(event) => setDraftBody(event.target.value)}
@@ -205,7 +205,7 @@ export function InboxPage({
                     disabled={!pendingDraft || disabled || !draftBody.trim()}
                     type="button">
                     <Send size={15} />
-                    Approve & Send
+                    Onayla ve Gönder
                   </button>
                 </div>
               ) : (
@@ -244,7 +244,7 @@ function DraftStatusBadge({ draft }: { draft: AssistantDraft }) {
   return (
     <span className={`draft-status ${draft.status}`}>
       {icon}
-      {draft.status.replace("_", " ")}
+      {labelStatus(draft.status)}
     </span>
   );
 }
@@ -266,7 +266,7 @@ function buildLinkedContext(draft: AssistantDraft, state: OperationsState) {
 
   if (customer) {
     linked.push({
-      label: "Customer",
+      label: "Müşteri",
       value: customer.name,
       detail: customer.email ?? customer.phone,
     });
@@ -274,15 +274,15 @@ function buildLinkedContext(draft: AssistantDraft, state: OperationsState) {
 
   if (order) {
     linked.push({
-      label: "Order",
-      value: `#${order.id} · ${order.status}`,
+      label: "Sipariş",
+      value: `#${order.id} · ${labelStatus(order.status)}`,
       detail: summarizeItems(order, state),
     });
   }
 
   if (shipment) {
     linked.push({
-      label: "Shipment",
+      label: "Kargo",
       value: shipment.trackingCode,
       detail: `${shipment.carrier} · ${shipment.eta}`,
     });
@@ -290,30 +290,11 @@ function buildLinkedContext(draft: AssistantDraft, state: OperationsState) {
 
   if (product) {
     linked.push({
-      label: "Product",
+      label: "Ürün",
       value: product.name,
-      detail: `${product.stock} ${product.unit} · threshold ${product.threshold}`,
+      detail: `${product.stock} ${product.unit} · eşik ${product.threshold}`,
     });
   }
 
   return linked;
-}
-
-function labelIntent(intent: MessageIntent): string {
-  const labels: Record<MessageIntent, string> = {
-    customer_update_draft: "Customer update draft",
-    order_lookup: "Order lookup",
-    stock_check: "Stock question",
-    shipment_risk: "Shipment tracking",
-    issue_check: "Issue check",
-    customer_lookup: "Customer lookup",
-    task_summary: "Task summary",
-    operations_summary: "Ops summary",
-    return_exchange: "Return/exchange",
-    complaint: "Complaint",
-    general: "General",
-    unknown: "Unknown",
-  };
-
-  return labels[intent];
 }
