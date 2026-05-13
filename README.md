@@ -8,12 +8,33 @@ Working website prototype for a hackathon challenge focused on AI-supported oper
 
 Suggested 3-minute demo:
 
-1. Open the dashboard and show the Business Memory panel: tomatoes, Ahmet Bey, Shipping Company X, and olive oil.
-2. Point out ChromaDB record count and whether Gemini is live or fallback.
-3. Save a short note in `Teach the assistant` to show live memory ingestion.
-4. Click `Use draft` on the red tomatoes insight to show a supplier order draft in the agent trace.
-5. In the AI Desk, send: `When will order 128 arrive?`
-6. Trigger `Notify` on a delayed shipment and show shipping-risk counts update.
+1. Open the dashboard and show Turkish proactive alerts, live metrics, stock risks, due orders, and the notification tray.
+2. Use global search to jump from a product, customer, order, chat item, inbox thread, or memory record into its page.
+3. Open the Memory page, point out the ChromaDB record count and whether Gemini is live or fallback, then save a short note in `Teach the assistant`.
+4. Click an insight action or stock draft to open a supplier/customer draft with confidence and owner review before send.
+5. Open `Gelen Kutusu`, sync mail, review the generated customer reply draft, edit it, then approve it.
+6. In the floating AI Assistant, send: `When will order 128 arrive?`, then try Telegram/WhatsApp/Email mock composers.
+
+## Feature Snapshot
+
+- Turkish operations cockpit with dashboard, inbox, stock, customers, orders, and memory pages.
+- Gemini-backed morning insights with Turkish titles, summaries, and ready-to-review draft actions, plus deterministic fallbacks for offline demos.
+- ChromaDB business memory with seed records, manual note ingestion, record browsing, and RAG-backed insight generation.
+- Email assistant that syncs IMAP or demo messages, classifies intent, links orders/products/customers, drafts replies, and requires human approval before SMTP send or dry-run recording.
+- Commerce connector health checks for IMAP, SMTP, and the generic commerce adapter.
+- Global search across operational data, memory, inbox threads, and chat history.
+- Notification tray for stock, shipment, due-order, and proactive insight actions.
+- Floating assistant with order lookup, stock checks, customer reply generation, and local Telegram/WhatsApp/Email mock composers.
+- Draft drawer for supplier restock, customer shipment, and assistant-generated contact messages with editable subject/body and confidence indicators.
+- Resettable demo state so hackathon runs can be replayed cleanly.
+
+## Screenshots
+
+![çırak dashboard](assets/cirak_main_page.png)
+
+![çırak assistant and messages](assets/cirak_message.png)
+
+![çırak order tracking](assets/cirak_order_track.png)
 
 ## AI Approach
 

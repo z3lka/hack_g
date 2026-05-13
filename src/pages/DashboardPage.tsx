@@ -327,7 +327,8 @@ function InsightCard({
   insight: ProactiveInsight;
   onAction: () => void;
 }) {
-  const summary = compactText(firstSentence(insight.summary), 110);
+  const title = translateInsightText(insight.title);
+  const summary = compactText(firstSentence(translateInsightText(insight.summary)), 110);
   const buttonLabel =
     insight.actionType === "create_supplier_order_draft"
       ? "Sipariş Maili"
@@ -343,7 +344,7 @@ function InsightCard({
         <span className="insight-dot" />
         <div className="insight-meta">
           <p className="eyebrow">{insight.entityName}</p>
-          <h3>{insight.title}</h3>
+          <h3>{title}</h3>
         </div>
       </div>
       <p className="insight-summary">{summary}</p>
@@ -356,4 +357,23 @@ function InsightCard({
       </button>
     </article>
   );
+}
+
+function translateInsightText(value: string): string {
+  const translations: Record<string, string> = {
+    "Critical Stock Out Risk": "Kritik Stok Tükenme Riski",
+    "Immediate Restock Required": "Acil Stok Yenileme Gerekli",
+    "Shipping Delay Follow-up": "Kargo Gecikmesi Takibi",
+    "Urgent Supplier Confirmation": "Acil Tedarikçi Onayı",
+    "Current stock is 9 jars with daily sales of 24.3, putting us at 1 day of inventory.":
+      "Mevcut stok 9 kavanoz ve günlük satış 24,3; bu da yaklaşık 1 günlük stok kaldığını gösteriyor.",
+    "Only 8 kg of tomatoes left with 15 kg/day sales; history shows we frequently run out on weekends.":
+      "Günde 15 kg satışa karşı yalnızca 8 kg domates kaldı; geçmiş veriler hafta sonları sık sık tükendiğini gösteriyor.",
+    "Customer order 131 has had no scan updates for 22 hours and is marked as delayed.":
+      "Müşteri siparişi 131 için 22 saattir tarama güncellemesi yok ve gecikmiş olarak işaretlendi.",
+    "Stock is at 18 sets, falling below the 20-set warning threshold; requires immediate supplier confirmation.":
+      "Stok 18 sete düştü ve 20 setlik uyarı eşiğinin altında; acil tedarikçi onayı gerekiyor.",
+  };
+
+  return translations[value] ?? value;
 }

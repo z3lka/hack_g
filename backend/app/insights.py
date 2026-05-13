@@ -85,11 +85,11 @@ Return ONLY strict JSON with this exact shape, no markdown, no explanation:
   "insights": [
     {{
       "color": "red|yellow|orange|green",
-      "entityName": "string — product name, customer name, or carrier name",
-      "title": "short dashboard title (max 6 words)",
-      "summary": "one clear sentence explaining why this matters today",
+      "entityName": "string — product name, customer name, or carrier name in Turkish",
+      "title": "short Turkish dashboard title (max 6 words)",
+      "summary": "one clear Turkish sentence explaining why this matters today",
       "evidence": ["memory record that supports this", "another supporting record"],
-      "draftAction": "ready-to-send message or operational instruction (Turkish or English)",
+      "draftAction": "ready-to-send Turkish message or operational instruction",
       "actionType": "create_supplier_order_draft|create_customer_reminder_draft|suggest_shipping_alternative|memory_insight_generated",
       "confidence": 0.0
     }}
@@ -101,6 +101,7 @@ Rules:
 •⁠  ⁠Generate 3 to 5 insights maximum
 •⁠  ⁠Only include insights supported by memory evidence or clear data anomalies
 •⁠  ⁠Do NOT invent facts not present in the snapshot or memory
+•⁠  ⁠All user-facing fields must be in Turkish: entityName, title, summary, draftAction
 •⁠  ⁠confidence is a float between 0.0 and 1.0
 
 Current operations snapshot:

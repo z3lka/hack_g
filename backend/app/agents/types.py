@@ -28,6 +28,10 @@ class ResolvedRequest:
     customerOrderMismatch: bool = False
     requestedChannel: ContactDraftChannel | None = None
     directCustomerMessage: bool = False
+    directMessageContent: str | None = None
+    targetKind: str | None = None
+    supplierName: str | None = None
+    supplierProducts: list[Product] = field(default_factory=list)
     matchingOrders: list[Order] = field(default_factory=list)
     orderCollectionLabel: str = "matching"
     activeIssues: list[OperationalIssue] = field(default_factory=list)
