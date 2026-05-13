@@ -192,6 +192,8 @@ export type MessageIntent =
 
 export type MessageEntities = {
   orderId?: string | null;
+  orderStatus?: string | null;
+  orderTimeframe?: string | null;
   productId?: string | null;
   productName?: string | null;
   customerId?: string | null;

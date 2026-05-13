@@ -161,6 +161,8 @@ class OperationsState(BaseModel):
 
 class MessageEntities(BaseModel):
     orderId: str | None = None
+    orderStatus: str | None = None
+    orderTimeframe: str | None = None
     productId: str | None = None
     productName: str | None = None
     customerId: str | None = None

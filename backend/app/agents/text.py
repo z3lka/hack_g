@@ -158,24 +158,15 @@ def _fallback_contact_draft_subject(
     order: Order | None,
     product: Product | None,
 ) -> str:
-    fallback_language = _fallback_response_language(message)
-
     if order:
-        return (
-            f"Sipariş #{order.id} güncellemesi"
-            if fallback_language == "tr"
-            else f"Update on order #{order.id}"
-        )
+        return f"Sipariş #{order.id} güncellemesi"
 
     if product:
         status = _direct_update_status(_normalize(message))
-        if fallback_language == "tr":
-            suffix = "geldi" if status == "arrived" else "hazır"
-            return f"{product.name} {suffix}"
-        suffix = "arrived" if status == "arrived" else "is ready"
+        suffix = "geldi" if status == "arrived" else "hazır"
         return f"{product.name} {suffix}"
 
-    return "Müşteri mesajı" if fallback_language == "tr" else "Customer message"
+    return "Müşteri mesajı"
 
 
 def _fallback_contact_draft_body(
@@ -188,55 +179,30 @@ def _fallback_contact_draft_body(
     product: Product | None,
     direct_customer_message: bool,
 ) -> str:
-    fallback_language = _fallback_response_language(message)
-
     if not direct_customer_message and order:
         items = summarize_order_items(order, state)
-        if fallback_language == "tr":
-            lines = [
-                f"Merhaba {customer.name},",
-                "",
-                (
-                    f"Sipariş #{order.id} için kısa bir güncelleme paylaşmak istedik. "
-                    f"Güncel durum: {order.status}."
-                ),
-                f"Sipariş içeriği: {items}.",
-            ]
-            if shipment and tracking_url:
-                lines.extend(
-                    [
-                        f"Kargo firması: {shipment.carrier}. Tahmini teslim: {shipment.eta}.",
-                        f"Son kargo hareketi: {shipment.lastScan}.",
-                        f"Takip bağlantısı: {tracking_url}",
-                    ]
-                )
-            else:
-                lines.append(
-                    "Takip bilgisi henüz oluşmadı; kargo kaydı açıldığında paylaşacağız."
-                )
-            lines.extend(["", "Sevgiler,", "Çırak"])
-            return "\n".join(lines)
-
         lines = [
-            f"Hi {customer.name},",
+            f"Merhaba {customer.name},",
             "",
-            f"Quick update on order #{order.id}: the current status is {order.status}.",
-            f"Order items: {items}.",
+            (
+                f"Sipariş #{order.id} için kısa bir güncelleme paylaşmak istedik. "
+                f"Güncel durum: {order.status}."
+            ),
+            f"Sipariş içeriği: {items}.",
         ]
         if shipment and tracking_url:
             lines.extend(
                 [
-                    f"Carrier: {shipment.carrier}. Estimated delivery: {shipment.eta}.",
-                    f"Latest scan: {shipment.lastScan}.",
-                    f"Tracking link: {tracking_url}",
+                    f"Kargo firması: {shipment.carrier}. Tahmini teslim: {shipment.eta}.",
+                    f"Son kargo hareketi: {shipment.lastScan}.",
+                    f"Takip bağlantısı: {tracking_url}",
                 ]
             )
         else:
             lines.append(
-                "Tracking is not available yet; we will share it as soon as "
-                "the carrier record is created."
+                "Takip bilgisi henüz oluşmadı; kargo kaydı açıldığında paylaşacağız."
             )
-        lines.extend(["", "Best,", "Çırak"])
+        lines.extend(["", "Sevgiler,", "Çırak"])
         return "\n".join(lines)
 
     normalized = _normalize(message)
@@ -245,53 +211,26 @@ def _fallback_contact_draft_body(
     product_phrase = _customer_product_phrase(product, quantity)
     first_name = _first_name(customer.name)
 
-    if fallback_language == "tr":
-        if status == "arrived":
-            if _mentions_special_order(normalized):
-                update = (
-                    f"Daha önce özel olarak sipariş ettiğiniz {product_phrase} geldi."
-                )
-            else:
-                update = f"{product_phrase} geldi."
-            follow_up = "Teslimat için nasıl ilerlememizi istersiniz?"
-        elif status == "ready":
-            update = f"{product_phrase} hazır."
-            follow_up = "Teslimat veya teslim alma için nasıl ilerleyelim?"
-        else:
-            update = f"{product_phrase} için size bilgi vermek istedik."
-            follow_up = "Uygun olduğunuzda dönüş yapabilirsiniz."
-
-        return "\n".join(
-            [
-                f"Merhaba {first_name},",
-                "",
-                f"{update} {follow_up}",
-                "",
-                "Sevgiler,",
-                "Çırak",
-            ]
-        )
-
     if status == "arrived":
         if _mentions_special_order(normalized):
-            update = f"The {product_phrase} you special ordered has arrived."
+            update = f"Daha önce özel olarak sipariş ettiğiniz {product_phrase} geldi."
         else:
-            update = f"{product_phrase} has arrived."
-        follow_up = "How would you like us to proceed with delivery?"
+            update = f"{product_phrase} geldi."
+        follow_up = "Teslimat için nasıl ilerlememizi istersiniz?"
     elif status == "ready":
-        update = f"{product_phrase} is ready."
-        follow_up = "How would you like to handle delivery or pickup?"
+        update = f"{product_phrase} hazır."
+        follow_up = "Teslimat veya teslim alma için nasıl ilerleyelim?"
     else:
-        update = f"We wanted to share a quick update about {product_phrase}."
-        follow_up = "Please let us know what works best for you."
+        update = f"{product_phrase} için size bilgi vermek istedik."
+        follow_up = "Uygun olduğunuzda dönüş yapabilirsiniz."
 
     return "\n".join(
         [
-            f"Hi {first_name},",
+            f"Merhaba {first_name},",
             "",
             f"{update} {follow_up}",
             "",
-            "Best,",
+            "Sevgiler,",
             "Çırak",
         ]
     )
@@ -410,45 +349,6 @@ def _looks_like_customer_lookup(normalized: str) -> bool:
     )
 
 
-def _looks_like_order_lookup(normalized: str) -> bool:
-    tokens = set(normalized.split())
-    return bool(
-        {
-            "siparis",
-            "order",
-            "orders",
-            "nerede",
-            "where",
-            "gelir",
-            "arrive",
-            "eta",
-            "teslim",
-            "delivery",
-            "takip",
-            "tracking",
-            "delayed",
-            "packing",
-        }
-        & tokens
-        or _mentions_due_today(normalized)
-        or "gecik" in normalized
-    )
-
-
-def _mentions_today(normalized: str) -> bool:
-    tokens = set(normalized.split())
-    return bool({"today", "bugun"} & tokens)
-
-
-def _mentions_due_today(normalized: str) -> bool:
-    return (
-        _phrase_in_normalized_text(normalized, "due today")
-        or _phrase_in_normalized_text(normalized, "today orders")
-        or _phrase_in_normalized_text(normalized, "orders today")
-        or _phrase_in_normalized_text(normalized, "bugun")
-    )
-
-
 def _tracking_url(shipment: Shipment) -> str:
     return f"https://tracking.cirak.local/{_slugify(shipment.carrier)}/{shipment.trackingCode}"
 
@@ -473,8 +373,3 @@ def _product_match_tokens(value: str) -> set[str]:
         for token in value.split()
         if len(token) >= 3 and token not in PRODUCT_MATCH_STOPWORDS
     }
-
-
-def _fallback_response_language(message: str) -> str:
-    # Offline fallback only; production language choice lives in the LLM system prompt.
-    return "tr" if any(char in message for char in "çğıöşüÇĞİÖŞÜ") else "en"

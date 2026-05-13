@@ -20,9 +20,6 @@ from .text import (
     _has_direct_customer_message_content,
     _is_customer_update_request,
     _looks_like_customer_lookup,
-    _looks_like_order_lookup,
-    _mentions_due_today,
-    _mentions_today,
     _normalize,
     _phrase_in_normalized_text,
     _product_match_tokens,
@@ -134,6 +131,12 @@ class RequestResolverMixin:
                   - complaint: damaged item, wrong item, angry customer, or service complaint
                   - general: anything else
 
+                  For order collection questions, set:
+                  - orderStatus to one of new, packing, shipped, delayed, delivered when the user asks for orders by status.
+                  - orderTimeframe to due_today when the user asks for orders due, expected, or needing action today.
+                  Leave those fields empty when they are not part of the request.
+                  Classify by meaning from the full message. Do not require language flags or caller-provided locale hints.
+
                   Products:
                   {product_lines}
 
@@ -163,6 +166,8 @@ class RequestResolverMixin:
             intent_payload = {
                 "intent": interpretation.intent,
                 "orderId": interpretation.entities.orderId or "",
+                "orderStatus": interpretation.entities.orderStatus or "",
+                "orderTimeframe": interpretation.entities.orderTimeframe or "",
                 "productId": interpretation.entities.productId or "",
                 "productName": interpretation.entities.productName or "",
                 "customerName": interpretation.entities.customerName or "",
@@ -191,11 +196,13 @@ class RequestResolverMixin:
         )
 
         if intent not in INTENTS:
-            intent = self._heuristic_intent(message, order_id, product)
+            intent = self._heuristic_intent(message, order_id, product, customer)
 
         if _is_customer_update_request(message):
             intent = "customer_update_draft"
 
+        order_status_filter = self._order_status_filter(intent_payload)
+        order_timeframe_filter = self._order_timeframe_filter(intent_payload)
         order_resolved_from_customer = False
         can_infer_order = intent in {
             "order_lookup",
@@ -233,8 +240,16 @@ class RequestResolverMixin:
                     customer = order_customer
 
         matching_orders = (
-            self._matching_orders_for_message(message, state)
-            if intent == "order_lookup" and not order_id
+            self._matching_orders_for_filters(
+                state,
+                order_status_filter,
+                order_timeframe_filter,
+            )
+            if (
+                intent == "order_lookup"
+                and not order_id
+                and (order_status_filter or order_timeframe_filter)
+            )
             else []
         )
         active_issues = [issue for issue in state.issues if not issue.resolved]
@@ -245,6 +260,8 @@ class RequestResolverMixin:
         return ResolvedRequest(
             intent=intent,
             orderId=order_id,
+            orderStatusFilter=order_status_filter,
+            orderTimeframeFilter=order_timeframe_filter,
             orderResolvedFromCustomer=order_resolved_from_customer,
             orderContext=order_context,
             product=product,
@@ -255,7 +272,10 @@ class RequestResolverMixin:
             requestedChannel=explicit_channel,
             directCustomerMessage=direct_customer_message,
             matchingOrders=matching_orders,
-            orderCollectionLabel=self._order_collection_label(message),
+            orderCollectionLabel=self._order_collection_label(
+                order_status_filter,
+                order_timeframe_filter,
+            ),
             activeIssues=active_issues,
             activeAlerts=active_alerts,
             riskyShipments=risky_shipments,
@@ -319,6 +339,8 @@ class RequestResolverMixin:
 
         return MessageEntities(
             orderId=context.get("orderId"),
+            orderStatus=context.get("orderStatusFilter"),
+            orderTimeframe=context.get("orderTimeframeFilter"),
             productId=product.id if product else None,
             productName=product.name if product else None,
             customerId=customer.id if customer else None,
@@ -422,7 +444,11 @@ class RequestResolverMixin:
         return " ".join(part for part in parts if part)
 
     def _heuristic_intent(
-        self, message: str, order_id: str | None, product: Product | None
+        self,
+        message: str,
+        order_id: str | None,
+        product: Product | None,
+        customer: Customer | None,
     ) -> str:
         normalized = _normalize(message)
 
@@ -469,9 +495,6 @@ class RequestResolverMixin:
         ):
             return "stock_check"
 
-        if _looks_like_order_lookup(normalized):
-            return "order_lookup"
-
         if any(
             word in normalized
             for word in [
@@ -492,7 +515,19 @@ class RequestResolverMixin:
         if any(word in normalized for word in ["gorev", "task", "todo"]):
             return "task_summary"
 
+        if customer:
+            return "order_lookup"
+
         return "operations_summary"
+
+    def _order_status_filter(self, intent_payload: dict[str, str]) -> str | None:
+        status = (intent_payload.get("orderStatus") or "").strip().lower()
+        valid_statuses = {"new", "packing", "shipped", "delayed", "delivered"}
+        return status if status in valid_statuses else None
+
+    def _order_timeframe_filter(self, intent_payload: dict[str, str]) -> str | None:
+        timeframe = (intent_payload.get("orderTimeframe") or "").strip().lower()
+        return timeframe if timeframe == "due_today" else None
 
     def _actions_for_context(
         self,
@@ -607,41 +642,36 @@ class RequestResolverMixin:
 
         return actions
 
-    def _matching_orders_for_message(
+    def _matching_orders_for_filters(
         self,
-        message: str,
         state: OperationsState,
+        status_filter: str | None,
+        timeframe_filter: str | None,
     ) -> list[Order]:
-        normalized = _normalize(message)
-        tokens = set(normalized.split())
+        orders = state.orders
 
-        if "delayed" in tokens or "gecik" in normalized:
-            return [order for order in state.orders if order.status == "delayed"]
+        if status_filter:
+            orders = [order for order in orders if order.status == status_filter]
 
-        if "packing" in tokens or "paket" in normalized:
-            orders = [order for order in state.orders if order.status == "packing"]
-            if _mentions_today(normalized):
-                return [order for order in orders if order.dueToday]
-            return orders
-
-        if _mentions_due_today(normalized):
-            return [
+        if timeframe_filter == "due_today":
+            orders = [
                 order
-                for order in state.orders
-                if order.dueToday and order.status != "delivered"
+                for order in orders
+                if order.dueToday and (status_filter or order.status != "delivered")
             ]
 
-        return []
+        return orders
 
-    def _order_collection_label(self, message: str) -> str:
-        normalized = _normalize(message)
-        tokens = set(normalized.split())
-
-        if "delayed" in tokens or "gecik" in normalized:
-            return "delayed"
-        if "packing" in tokens or "paket" in normalized:
-            return "packing today" if _mentions_today(normalized) else "packing"
-        if _mentions_due_today(normalized):
+    def _order_collection_label(
+        self,
+        status_filter: str | None,
+        timeframe_filter: str | None,
+    ) -> str:
+        if status_filter and timeframe_filter == "due_today":
+            return f"{status_filter} due today"
+        if status_filter:
+            return status_filter
+        if timeframe_filter == "due_today":
             return "due today"
         return "matching"
 

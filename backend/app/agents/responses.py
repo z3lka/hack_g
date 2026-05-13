@@ -1,6 +1,6 @@
 from .. import store
 from ..models import OperationsState, Order
-from .text import summarize_order_items, _fallback_response_language
+from .text import summarize_order_items
 from .types import ResolvedRequest
 
 
@@ -32,6 +32,33 @@ class ResponseGenerationMixin:
             f"{summarize_order_items(order, state)}, {order.total} TRY{shipment_text}"
         )
 
+    def _order_summary_line_tr(self, order: Order, state: OperationsState) -> str:
+        customer = next(
+            (
+                candidate
+                for candidate in state.customers
+                if candidate.id == order.customerId
+            ),
+            None,
+        )
+        shipment = next(
+            (
+                candidate
+                for candidate in state.shipments
+                if candidate.orderId == order.id
+            ),
+            None,
+        )
+        shipment_text = (
+            f", {shipment.carrier} ETA {shipment.eta}, risk {shipment.risk}"
+            if shipment
+            else ""
+        )
+        return (
+            f"#{order.id} {order.status}, müşteri {customer.name if customer else order.customerId}, "
+            f"{summarize_order_items(order, state)}, {order.total} TRY{shipment_text}"
+        )
+
     def _build_grounded_reply_prompt(
         self, message: str, context: ResolvedRequest, state: OperationsState
     ) -> str:
@@ -51,7 +78,7 @@ Detected intent: {context["intent"]}
 Exact data available for the reply:
 {context_lines}
 
-Reply with one short paragraph. No markdown.
+Reply in the conversation language with one short paragraph. No markdown.
 """.strip()
 
     def _grounded_context_lines(
@@ -186,142 +213,81 @@ Reply with one short paragraph. No markdown.
         customer = context.get("customer")
         intent = context.get("intent")
         matching_orders = context.get("matchingOrders") or []
-        fallback_language = _fallback_response_language(message)
 
         if matching_orders:
             label = context.get("orderCollectionLabel") or "matching"
             details = "; ".join(
-                self._order_summary_line(order, state) for order in matching_orders[:6]
+                self._order_summary_line_tr(order, state)
+                for order in matching_orders[:6]
             )
-            if fallback_language == "tr":
-                return f"{len(matching_orders)} {label} sipariş buldum: {details}."
-            return f"I found {len(matching_orders)} {label} orders: {details}."
+            return f"{len(matching_orders)} {label} sipariş buldum: {details}."
 
         if intent == "customer_lookup" and customer:
             latest = order_context[0] if order_context else None
             latest_text = (
-                f" Latest order is #{latest.id} with status {latest.status}."
+                f" Son siparişi #{latest.id}, durum {latest.status}."
                 if latest
-                else " No recent order is recorded."
+                else " Kayıtlı yakın sipariş yok."
             )
-            if fallback_language == "tr":
-                latest_text_tr = (
-                    f" Son siparişi #{latest.id}, durum {latest.status}."
-                    if latest
-                    else " Kayıtlı yakın sipariş yok."
-                )
-                return (
-                    f"{customer.name}: varsayılan kanal {customer.channel}, telefon {customer.phone}, "
-                    f"e-posta {customer.email or 'N/A'}.{latest_text_tr}"
-                )
             return (
-                f"{customer.name}: default channel {customer.channel}, phone {customer.phone}, "
-                f"email {customer.email or 'N/A'}.{latest_text}"
+                f"{customer.name}: varsayılan kanal {customer.channel}, telefon {customer.phone}, "
+                f"e-posta {customer.email or 'N/A'}.{latest_text}"
             )
 
         if order_id:
             if order_context is None:
-                return (
-                    f"{order_id} numaralı siparişi bulamadım. Lütfen sipariş numarasını kontrol edin."
-                    if fallback_language == "tr"
-                    else f"I could not find order {order_id}. Please check the number and try again."
-                )
+                return f"{order_id} numaralı siparişi bulamadım. Lütfen sipariş numarasını kontrol edin."
             order, shipment = order_context
             item_summary = summarize_order_items(order, state)
             if shipment:
-                if fallback_language == "tr":
-                    return (
-                        f"Sipariş {order.id} içeriği: {item_summary}. "
-                        f"{shipment.carrier} ETA {shipment.eta}. "
-                        f"Son güncelleme: {shipment.lastScan}."
-                    )
-                return (
-                    f"Order {order.id} contains {item_summary}. "
-                    f"{shipment.carrier} shows ETA {shipment.eta}. "
-                    f"Last update: {shipment.lastScan}."
-                )
-            if fallback_language == "tr":
                 return (
                     f"Sipariş {order.id} içeriği: {item_summary}. "
-                    f"Güncel durum: {order.status}."
-                )
-            return f"Order {order.id} contains {item_summary}. Current status: {order.status}."
-
-        if product:
-            if fallback_language == "tr":
-                return (
-                    f"{product.name} için mevcut stok {product.stock} {product.unit}. "
-                    f"Günlük ortalama satış {round(store.average_daily_sales(product), 1)} {product.unit}; "
-                    f"kalan stok yaklaşık {store.remaining_days(product)} gün yeter."
+                    f"Güncel durum: {order.status}. "
+                    f"{shipment.carrier} ETA {shipment.eta}. "
+                    f"Son güncelleme: {shipment.lastScan}."
                 )
             return (
-                f"{product.name} has {product.stock} {product.unit} available. "
-                f"Average daily sales are {round(store.average_daily_sales(product), 1)} {product.unit}; "
-                f"remaining coverage is {store.remaining_days(product)} days."
+                f"Sipariş {order.id} içeriği: {item_summary}. "
+                f"Güncel durum: {order.status}."
+            )
+
+        if product:
+            return (
+                f"{product.name} için mevcut stok {product.stock} {product.unit}. "
+                f"Günlük ortalama satış {round(store.average_daily_sales(product), 1)} {product.unit}; "
+                f"kalan stok yaklaşık {store.remaining_days(product)} gün yeter."
             )
 
         if intent == "issue_check":
             issues = context["activeIssues"]
             if not issues:
-                return (
-                    "Şu anda açık operasyon hatası kayıtlı değil."
-                    if fallback_language == "tr"
-                    else "No open operational issues are currently recorded."
-                )
+                return "Şu anda açık operasyon hatası kayıtlı değil."
 
             issue_summary = "; ".join(
                 f"{issue.title} ({issue.severity})" for issue in issues[:4]
             )
-            if fallback_language == "tr":
-                return f"{len(issues)} açık operasyon hatası buldum: {issue_summary}."
-            return f"I found {len(issues)} open operational issues: {issue_summary}."
+            return f"{len(issues)} açık operasyon hatası buldum: {issue_summary}."
 
         if intent == "shipment_risk":
             shipments = context["riskyShipments"]
             if not shipments:
-                return (
-                    "Şu anda açık kargo riski yok."
-                    if fallback_language == "tr"
-                    else "There are no open shipment risks right now."
-                )
+                return "Şu anda açık kargo riski yok."
 
             shipment_summary = "; ".join(
-                f"order {shipment.orderId} via {shipment.carrier} is {shipment.risk}"
+                f"sipariş {shipment.orderId} {shipment.carrier} ile {shipment.risk}"
                 for shipment in shipments[:4]
             )
-            if fallback_language == "tr":
-                shipment_summary_tr = "; ".join(
-                    f"sipariş {shipment.orderId} {shipment.carrier} ile {shipment.risk}"
-                    for shipment in shipments[:4]
-                )
-                return f"{len(shipments)} kargo riski buldum: {shipment_summary_tr}."
-            return f"I found {len(shipments)} shipment risks: {shipment_summary}."
+            return f"{len(shipments)} kargo riski buldum: {shipment_summary}."
 
         if intent == "return_exchange":
-            return (
-                "Mesajınızı aldık. İade veya değişim talebinizi kontrol edip sipariş bilgileriyle birlikte size dönüş yapacağız."
-                if fallback_language == "tr"
-                else "We received your message. We will check the return or exchange request against the order details and follow up."
-            )
+            return "Mesajınızı aldık. İade veya değişim talebinizi kontrol edip sipariş bilgileriyle birlikte size dönüş yapacağız."
 
         if intent == "complaint":
-            return (
-                "Mesajınızı aldık. Yaşadığınız sorunu sipariş ve ürün bilgileriyle birlikte kontrol edip size net bilgi vereceğiz."
-                if fallback_language == "tr"
-                else "We received your message. We will review the issue against the order and product details and reply with a clear update."
-            )
-
-        if fallback_language == "tr":
-            return (
-                "Açık siparişleri, stok risklerini, kargo istisnalarını ve operasyon hatalarını kontrol ettim. "
-                f"{len(context['activeAlerts'])} stok uyarısı, "
-                f"{len(context['riskyShipments'])} kargo riski ve "
-                f"{len(context['activeIssues'])} açık hata var."
-            )
+            return "Mesajınızı aldık. Yaşadığınız sorunu sipariş ve ürün bilgileriyle birlikte kontrol edip size net bilgi vereceğiz."
 
         return (
-            "I checked open orders, stock risks, shipment exceptions, and operational issues. "
-            f"There are {len(context['activeAlerts'])} stock alerts, "
-            f"{len(context['riskyShipments'])} shipment risks, and "
-            f"{len(context['activeIssues'])} open issues."
+            "Açık siparişleri, stok risklerini, kargo istisnalarını ve operasyon hatalarını kontrol ettim. "
+            f"{len(context['activeAlerts'])} stok uyarısı, "
+            f"{len(context['riskyShipments'])} kargo riski ve "
+            f"{len(context['activeIssues'])} açık hata var."
         )

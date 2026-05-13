@@ -17,6 +17,8 @@ from ..models import (
 class ResolvedRequest:
     intent: str | None
     orderId: str | None = None
+    orderStatusFilter: str | None = None
+    orderTimeframeFilter: str | None = None
     orderResolvedFromCustomer: bool = False
     orderContext: tuple[Order, Shipment | None] | None = None
     product: Product | None = None

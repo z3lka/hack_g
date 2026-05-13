@@ -21,7 +21,6 @@ from .constants import (
 from .text import (
     _default_contact_channel,
     _fallback_contact_draft_payload,
-    _fallback_response_language,
     _tracking_url,
     get_channel_display_name,
 )
@@ -228,6 +227,7 @@ Context guardrails:
 - {order_note}
 - {shipment_note}
 - {product_note}
+- Use the customer-facing language implied by the owner request; do not add translation notes.
 - If the owner request contains a quantity or status, preserve it exactly.
 - If this is a direct customer message, do not add order number, order status, order contents, tracking, or unrelated products unless the owner explicitly asked for them.
 
@@ -258,14 +258,9 @@ Write one short assistant confirmation to the owner.
         if response_text:
             return response_text.strip()
 
-        if _fallback_response_language(message) == "tr":
-            return (
-                f"{draft.customerName} için {channel} kanalında incelemeye hazır "
-                f"bir müşteri güncelleme taslağı oluşturdum."
-            )
         return (
-            f"I prepared a customer update draft for {draft.customerName} "
-            f"on {channel} for owner review."
+            f"{draft.customerName} için {channel} kanalında incelemeye hazır "
+            f"bir müşteri güncelleme taslağı oluşturdum."
         )
 
     def _contact_draft_blocked_reply(
@@ -279,48 +274,27 @@ Write one short assistant confirmation to the owner.
             return response_text
 
         order_id = context.get("orderId")
-        fallback_language = _fallback_response_language(message)
 
         if context.get("customerOrderMismatch"):
             named_customer = context.get("namedCustomer")
             order_customer = context.get("orderCustomer")
-            if fallback_language == "tr":
-                return (
-                    f"Sipariş {order_id}, {named_customer.name if named_customer else 'seçilen müşteri'} "
-                    f"yerine {order_customer.name if order_customer else 'başka bir müşteri'} "
-                    "adına kayıtlı. "
-                    "Bu nedenle taslak oluşturmadım."
-                )
             return (
-                f"Order {order_id} belongs to "
-                f"{order_customer.name if order_customer else 'another customer'}, "
-                f"not {named_customer.name if named_customer else 'the named customer'}. "
-                "I did not create a draft."
+                f"Sipariş {order_id}, {named_customer.name if named_customer else 'seçilen müşteri'} "
+                f"yerine {order_customer.name if order_customer else 'başka bir müşteri'} "
+                "adına kayıtlı. "
+                "Bu nedenle taslak oluşturmadım."
             )
 
         if order_id and not context.get("orderContext"):
-            if fallback_language == "tr":
-                return f"Sipariş {order_id} bulunamadı; müşteri mesajı taslağı oluşturmadım."
-            return (
-                f"I could not find order {order_id}, so I did not create "
-                "a customer message draft."
-            )
+            return f"Sipariş {order_id} bulunamadı; müşteri mesajı taslağı oluşturmadım."
 
         if not context.get("customer"):
-            if fallback_language == "tr":
-                return "Hedef müşteriyi belirleyemedim; taslak oluşturmadım."
-            return (
-                "I could not identify the target customer, so I did not create a draft."
-            )
+            return "Hedef müşteriyi belirleyemedim; taslak oluşturmadım."
 
         if not state.orders:
-            return "No orders are available for drafting a customer update."
+            return "Taslak oluşturmak için kullanılabilir sipariş yok."
 
-        return (
-            "Taslak oluşturmak için sipariş ve müşteri bilgisini netleştirmem gerekiyor."
-            if fallback_language == "tr"
-            else "I need a clear customer and order before creating a draft."
-        )
+        return "Taslak oluşturmak için sipariş ve müşteri bilgisini netleştirmem gerekiyor."
 
     def _llm_contact_draft_blocked_reply(
         self,

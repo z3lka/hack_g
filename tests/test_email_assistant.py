@@ -48,6 +48,13 @@ class EmailAssistantTests(unittest.TestCase):
                 os.environ[key] = value
         reset_inbox_state()
 
+    def _stub_intent_classifier(self, payload: dict[str, str]) -> None:
+        original = agent._detect_intent_with_gemini
+        agent._detect_intent_with_gemini = (  # type: ignore[method-assign]
+            lambda message, state: payload
+        )
+        self.addCleanup(setattr, agent, "_detect_intent_with_gemini", original)
+
     def test_intent_and_entity_extraction_for_turkish_and_english_messages(self) -> None:
         turkish = agent.interpret_message(
             "Sipariş 128 ne zaman gelir?",
@@ -65,6 +72,8 @@ class EmailAssistantTests(unittest.TestCase):
         self.assertEqual(english_stock.entities.productId, "p-103")
 
     def test_vague_order_question_can_use_customer_email_or_request_review(self) -> None:
+        self._stub_intent_classifier({"intent": "order_lookup"})
+
         resolved = agent.interpret_message(
             "Where is my order?",
             self.state,
@@ -164,7 +173,7 @@ class EmailAssistantTests(unittest.TestCase):
         self.assertIsNone(draft.entities.productId)
         self.assertIn("https://tracking.cirak.local/mng-kargo/MNG128-TR", draft.body)
         self.assertIn("MNG Kargo", draft.body)
-        self.assertIn("owner review", response.agentMessage.text.lower())
+        self.assertIn("incelemeye hazır", response.agentMessage.text.lower())
         self.assertIn(
             "create_customer_update_draft",
             {action.type for action in response.actions},
@@ -208,7 +217,7 @@ class EmailAssistantTests(unittest.TestCase):
         )
 
         self.assertIsNone(response.contactDraft)
-        self.assertIn("could not find order 111", response.agentMessage.text.lower())
+        self.assertIn("sipariş 111 bulunamadı", response.agentMessage.text.lower())
 
     def test_customer_update_order_customer_mismatch_blocks_draft(self) -> None:
         response = chat(
@@ -218,16 +227,30 @@ class EmailAssistantTests(unittest.TestCase):
         )
 
         self.assertIsNone(response.contactDraft)
-        self.assertIn("Order 128 belongs to Mina Yılmaz", response.agentMessage.text)
-        self.assertIn("not Selin Kaya", response.agentMessage.text)
+        self.assertIn("Sipariş 128", response.agentMessage.text)
+        self.assertIn("Selin Kaya yerine Mina Yılmaz", response.agentMessage.text)
 
     def test_delayed_order_collection_question_returns_order_details(self) -> None:
+        self._stub_intent_classifier(
+            {"intent": "order_lookup", "orderStatus": "delayed"}
+        )
+
         result = agent.generate_customer_reply("which orders are delayed?", self.state)
 
-        self.assertIn("3 delayed orders", result.response)
+        self.assertIn("3 delayed sipariş", result.response)
         self.assertIn("#131", result.response)
         self.assertIn("#141", result.response)
         self.assertIn("#149", result.response)
+
+    def test_ascii_turkish_customer_order_question_uses_customer_context(self) -> None:
+        result = agent.generate_customer_reply(
+            "arda market siparisi ne durumda",
+            self.state,
+        )
+
+        self.assertIn("Sipariş 129", result.response)
+        self.assertIn("Güncel durum: packing", result.response)
+        self.assertNotIn("I checked open orders", result.response)
 
     def test_customer_lookup_question_returns_contact_and_latest_order_context(self) -> None:
         result = agent.generate_customer_reply("who is Mina?", self.state)
