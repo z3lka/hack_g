@@ -11,16 +11,41 @@ except Exception:
 
 class GeminiClient:
     def __init__(self) -> None:
-        self.api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-        self.model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-        self.embedding_model = os.getenv(
-            "GEMINI_EMBEDDING_MODEL", "gemini-embedding-001"
-        )
+        self.default_model = "gemini-2.5-flash"
+        self.default_embedding_model = "gemini-embedding-001"
         self.last_error: str | None = None
+        self._client = None
+        self._client_api_key: str | None = None
+
+    @property
+    def api_key(self) -> str | None:
+        return os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+
+    @property
+    def model(self) -> str:
+        return os.getenv("GEMINI_MODEL", self.default_model)
+
+    @property
+    def embedding_model(self) -> str:
+        return os.getenv("GEMINI_EMBEDDING_MODEL", self.default_embedding_model)
 
     @property
     def available(self) -> bool:
         return bool(self.api_key)
+
+    def _get_client(self):
+        api_key = self.api_key
+        if not api_key:
+            self.last_error = "GEMINI_API_KEY is not set."
+            return None
+
+        if self._client is None or self._client_api_key != api_key:
+            from google import genai
+
+            self._client = genai.Client(api_key=api_key)
+            self._client_api_key = api_key
+
+        return self._client
 
     def generate_json(
         self,
@@ -33,10 +58,11 @@ class GeminiClient:
             return None
 
         try:
-            from google import genai
             from google.genai import types
 
-            client = genai.Client(api_key=self.api_key)
+            client = self._get_client()
+            if client is None:
+                return None
             config = types.GenerateContentConfig(
                 response_mime_type="application/json",
                 response_schema=response_schema,
@@ -63,10 +89,11 @@ class GeminiClient:
             return None
 
         try:
-            from google import genai
             from google.genai import types
 
-            client = genai.Client(api_key=self.api_key)
+            client = self._get_client()
+            if client is None:
+                return None
             config = types.GenerateContentConfig(
                 system_instruction=system_instruction,
             )
@@ -91,7 +118,6 @@ class GeminiClient:
             return None
 
         try:
-            from google import genai
             from google.genai import types
 
             config_options: dict[str, str | int] = {"taskType": task_type}
@@ -99,7 +125,9 @@ class GeminiClient:
                 config_options["outputDimensionality"] = dimensions
             config = types.EmbedContentConfig(**config_options)
 
-            client = genai.Client(api_key=self.api_key)
+            client = self._get_client()
+            if client is None:
+                return None
             response = client.models.embed_content(
                 model=self.embedding_model,
                 contents=text,

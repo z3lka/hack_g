@@ -6,8 +6,7 @@ from .agents.domain import DomainToolsMixin
 from .agents.drafts import DraftGenerationMixin
 from .agents.resolver import RequestResolverMixin
 from .agents.responses import ResponseGenerationMixin
-from .agents.tasks import TaskPlanningMixin, dedupe_tasks
-from .agents.text import get_channel_display_name, summarize_order_items
+from .agents.tasks import TaskPlanningMixin
 from .gemini_client import gemini_client
 from .models import (
     AgentAction,
@@ -16,6 +15,18 @@ from .models import (
     ChatMessage,
     OperationsState,
 )
+
+FAST_REPLY_INTENTS = {
+    "order_lookup",
+    "stock_check",
+    "shipment_risk",
+    "issue_check",
+    "customer_lookup",
+    "task_summary",
+    "operations_summary",
+    "return_exchange",
+    "complaint",
+}
 
 
 class OperationsAgent(
@@ -28,7 +39,7 @@ class OperationsAgent(
     def generate_customer_reply(
         self, message: str, state: OperationsState
     ) -> AgentResult:
-        interpretation = self.interpret_message(message, state)
+        interpretation = self.interpret_message(message, state, include_memory=False)
         context = self._resolve_request(message, state, interpretation=interpretation)
         actions = [*interpretation.actions]
 
@@ -58,6 +69,12 @@ class OperationsAgent(
                 actions=actions,
             )
 
+        if context.get("intent") in FAST_REPLY_INTENTS:
+            return AgentResult(
+                response=self._fallback_reply(message, context, state),
+                actions=actions,
+            )
+
         prompt = self._build_grounded_reply_prompt(message, context, state)
         response_text = gemini_client.generate_text(
             prompt,
@@ -78,12 +95,14 @@ class OperationsAgent(
         state: OperationsState,
         customer_email: str | None = None,
         customer_name: str | None = None,
+        include_memory: bool = True,
     ) -> AssistantInterpretation:
         return self._interpret_message(
             message,
             state,
             customer_email=customer_email,
             customer_name=customer_name,
+            include_memory=include_memory,
         )
 
     def generate_customer_email_draft(
@@ -99,6 +118,7 @@ class OperationsAgent(
             state,
             customer_email=customer_email,
             customer_name=customer_name,
+            include_memory=False,
         )
         context = self._resolve_request(
             message,
@@ -107,6 +127,13 @@ class OperationsAgent(
             customer_name=customer_name,
             interpretation=interpretation,
         )
+        if context.get("intent") in FAST_REPLY_INTENTS:
+            return (
+                self._reply_subject(subject),
+                self._fallback_reply(message, context, state),
+                interpretation,
+            )
+
         prompt = self._build_customer_email_draft_prompt(
             message,
             subject,

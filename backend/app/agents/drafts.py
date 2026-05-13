@@ -1,6 +1,5 @@
 from .. import store
 from ..gemini_client import gemini_client
-from ..memory import query_memory
 from ..models import (
     AssistantInterpretation,
     ContactDraft,
@@ -16,7 +15,6 @@ from .constants import (
     BLOCKED_REPLY_SYSTEM_PROMPT,
     CONTACT_DRAFT_SCHEMA,
     CONTACT_DRAFT_SYSTEM_PROMPT,
-    OPERATIONS_SYSTEM_PROMPT,
 )
 from .text import (
     _default_contact_channel,
@@ -38,32 +36,10 @@ class DraftGenerationMixin:
         recommended_quantity = max(
             product.threshold * 2 - product.stock, round(average_demand * 10)
         )
-        memory_records = query_memory(
-            f"{product.name} {product.supplier} supplier restock delivery",
-            limit=4,
-        )
-        prompt = self._build_supplier_draft_prompt(
+        return self._fallback_supplier_draft(
             product,
-            round(average_demand, 1),
+            average_demand,
             recommended_quantity,
-            [record.text for record in memory_records],
-        )
-        response_text = gemini_client.generate_text(
-            prompt,
-            system_instruction=OPERATIONS_SYSTEM_PROMPT,
-        )
-
-        if response_text:
-            return response_text.strip()
-
-        return (
-            f"Konu: {product.name} Siparişi\n\n"
-            f"Merhaba {product.supplier},\n\n"
-            f"Mevcut {product.name} stoğumuz {product.stock} {product.unit} seviyesinde. "
-            f"Yeniden sipariş eşiğimiz {product.threshold} {product.unit} ve günlük ortalama "
-            f"satışımız yaklaşık {round(average_demand)} {product.unit}.\n\n"
-            f"Bu hafta için {recommended_quantity} {product.unit} {product.name} siparişi "
-            "oluşturmak istiyoruz. Uygunluk durumunuzu paylaşabilir misiniz?"
         )
 
     def _build_contact_draft(
@@ -140,6 +116,19 @@ class DraftGenerationMixin:
         product: Product | None,
         channel: ContactDraftChannel,
     ) -> dict[str, str]:
+        fallback_payload = _fallback_contact_draft_payload(
+            message,
+            customer,
+            order,
+            shipment,
+            tracking_url,
+            state,
+            product,
+            bool(context.get("directCustomerMessage")),
+        )
+        if order or product or context.get("directCustomerMessage"):
+            return fallback_payload
+
         prompt = self._build_contact_draft_prompt(
             message,
             context,
@@ -162,16 +151,7 @@ class DraftGenerationMixin:
             if subject and body:
                 return {"subject": subject, "body": body}
 
-        return _fallback_contact_draft_payload(
-            message,
-            customer,
-            order,
-            shipment,
-            tracking_url,
-            state,
-            product,
-            bool(context.get("directCustomerMessage")),
-        )
+        return fallback_payload
 
     def _build_contact_draft_prompt(
         self,
@@ -240,24 +220,6 @@ Return strict JSON:
 
     def _contact_draft_ready_reply(self, message: str, draft: ContactDraft) -> str:
         channel = get_channel_display_name(draft.recommendedChannel)
-        prompt = f"""
-Owner request:
-"{message}"
-
-Draft status:
-- Customer: {draft.customerName}
-- Channel: {channel}
-- Draft is ready for owner review, not sent.
-
-Write one short assistant confirmation to the owner.
-""".strip()
-        response_text = gemini_client.generate_text(
-            prompt,
-            system_instruction=OPERATIONS_SYSTEM_PROMPT,
-        )
-        if response_text:
-            return response_text.strip()
-
         return (
             f"{draft.customerName} için {channel} kanalında incelemeye hazır "
             f"bir müşteri güncelleme taslağı oluşturdum."
@@ -269,10 +231,6 @@ Write one short assistant confirmation to the owner.
         context: ResolvedRequest,
         state: OperationsState,
     ) -> str:
-        response_text = self._llm_contact_draft_blocked_reply(message, context, state)
-        if response_text:
-            return response_text
-
         order_id = context.get("orderId")
 
         if context.get("customerOrderMismatch"):
@@ -295,6 +253,22 @@ Write one short assistant confirmation to the owner.
             return "Taslak oluşturmak için kullanılabilir sipariş yok."
 
         return "Taslak oluşturmak için sipariş ve müşteri bilgisini netleştirmem gerekiyor."
+
+    def _fallback_supplier_draft(
+        self,
+        product: Product,
+        average_demand: float,
+        recommended_quantity: int,
+    ) -> str:
+        return (
+            f"Konu: {product.name} Siparişi\n\n"
+            f"Merhaba {product.supplier},\n\n"
+            f"Mevcut {product.name} stoğumuz {product.stock} {product.unit} seviyesinde. "
+            f"Yeniden sipariş eşiğimiz {product.threshold} {product.unit} ve günlük ortalama "
+            f"satışımız yaklaşık {round(average_demand)} {product.unit}.\n\n"
+            f"Bu hafta için {recommended_quantity} {product.unit} {product.name} siparişi "
+            "oluşturmak istiyoruz. Uygunluk durumunuzu paylaşabilir misiniz?"
+        )
 
     def _llm_contact_draft_blocked_reply(
         self,

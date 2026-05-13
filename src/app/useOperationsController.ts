@@ -40,6 +40,7 @@ import type {
 } from "./uiTypes";
 import type {
   AgentAction,
+  ChatMessage,
   ConnectorHealth,
   ContactDraft,
   CustomerThread,
@@ -66,6 +67,7 @@ export function useOperationsController() {
   const [insightsGeneratedAt, setInsightsGeneratedAt] = useState("");
   const [apiError, setApiError] = useState("");
   const [isMutating, setIsMutating] = useState(false);
+  const [isChatPending, setIsChatPending] = useState(false);
   const [activePage, setActivePage] = useState<PageView>("dashboard");
   const [ordersFilter, setOrdersFilter] = useState("Tümü");
   const [draftModal, setDraftModal] = useState<DraftModal | null>(null);
@@ -118,7 +120,7 @@ export function useOperationsController() {
     if (chatLogRef.current) {
       chatLogRef.current.scrollTop = chatLogRef.current.scrollHeight;
     }
-  }, [messages, chatState]);
+  }, [messages, chatState, isChatPending]);
 
   const currentState = state ?? emptyState;
   const dueToday = currentState.orders.filter(
@@ -304,24 +306,34 @@ export function useOperationsController() {
   async function handleChatSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!chatInput.trim()) {
+    const messageText = chatInput.trim();
+    if (!messageText) {
       return;
     }
 
-    await runMutation(async () => {
-      const response = await sendCustomerMessage(chatInput);
-      setMessages((current) => [
-        ...current,
-        response.customerMessage,
-        response.agentMessage,
-      ]);
-      prependActions(response.actions);
-      setState(response.state);
-      if (response.contactDraft) {
-        openContactDraft(response.contactDraft);
-      }
-      setChatInput("");
-    });
+    const pendingMessage = createLocalChatMessage(messageText, "customer");
+    setMessages((current) => [...current, pendingMessage]);
+    setChatInput("");
+    setIsChatPending(true);
+
+    try {
+      await runMutation(async () => {
+        const response = await sendCustomerMessage(messageText);
+        setMessages((current) => [
+          ...current.map((message) =>
+            message.id === pendingMessage.id ? response.customerMessage : message,
+          ),
+          response.agentMessage,
+        ]);
+        prependActions(response.actions);
+        setState(response.state);
+        if (response.contactDraft) {
+          openContactDraft(response.contactDraft);
+        }
+      });
+    } finally {
+      setIsChatPending(false);
+    }
   }
 
   async function handleInboxSync() {
@@ -645,6 +657,7 @@ export function useOperationsController() {
     insightsGeneratedAt,
     apiError,
     isMutating,
+    isChatPending,
     activePage,
     ordersFilter,
     draftModal,
@@ -704,5 +717,20 @@ export function useOperationsController() {
     updateMockComposer,
     closeMockComposer,
     sendMockComposerMessage,
+  };
+}
+
+function createLocalChatMessage(
+  text: string,
+  role: ChatMessage["role"],
+): ChatMessage {
+  return {
+    id: `local-${crypto.randomUUID()}`,
+    role,
+    text,
+    timestamp: new Date().toLocaleTimeString("tr-TR", {
+      hour: "2-digit",
+      minute: "2-digit",
+    }),
   };
 }

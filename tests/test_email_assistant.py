@@ -4,6 +4,7 @@ import unittest
 from backend.app import store
 from backend.app.agent import agent
 from backend.app.commerce import GenericRestCommerceConnector
+from backend.app.gemini_client import gemini_client
 from backend.app.inbox import (
     InboundEmail,
     approve_draft,
@@ -229,6 +230,28 @@ class EmailAssistantTests(unittest.TestCase):
         self.assertIsNone(response.contactDraft)
         self.assertIn("Sipariş 128", response.agentMessage.text)
         self.assertIn("Selin Kaya yerine Mina Yılmaz", response.agentMessage.text)
+
+    def test_structured_chat_and_drafts_do_not_wait_for_llm(self) -> None:
+        original_generate_text = gemini_client.generate_text
+        original_generate_json = gemini_client.generate_json
+
+        def fail_if_called(*args, **kwargs):
+            raise AssertionError("Structured assistant path should not call Gemini")
+
+        gemini_client.generate_text = fail_if_called  # type: ignore[method-assign]
+        gemini_client.generate_json = fail_if_called  # type: ignore[method-assign]
+        self.addCleanup(setattr, gemini_client, "generate_text", original_generate_text)
+        self.addCleanup(setattr, gemini_client, "generate_json", original_generate_json)
+
+        delayed = agent.generate_customer_reply("which orders are delayed?", self.state)
+        self.assertIn("3 delayed sipariş", delayed.response)
+
+        draft_response = chat(
+            ChatRequest(
+                message="send a message to Mina about order #128 with tracking"
+            )
+        )
+        self.assertIsNotNone(draft_response.contactDraft)
 
     def test_delayed_order_collection_question_returns_order_details(self) -> None:
         self._stub_intent_classifier(

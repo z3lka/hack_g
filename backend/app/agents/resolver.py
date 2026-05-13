@@ -154,6 +154,87 @@ class RequestResolverMixin:
 
         return {key: str(value) for key, value in payload.items() if value}
 
+    def _local_intent_payload(
+        self,
+        message: str,
+        state: OperationsState,
+        customer_email: str | None = None,
+        customer_name: str | None = None,
+    ) -> dict[str, str]:
+        order_id = self._detect_order_id(message)
+        product = self._detect_product(message, state)
+        customer = self._detect_customer(
+            state,
+            message=message,
+            customer_email=customer_email,
+            customer_name=customer_name,
+        )
+        intent = self._heuristic_intent(message, order_id, product, customer)
+        payload: dict[str, str] = {"intent": intent}
+
+        if order_id:
+            payload["orderId"] = order_id
+        if product:
+            payload["productId"] = product.id
+            payload["productName"] = product.name
+        if customer:
+            payload["customerName"] = customer.name
+            if customer.email:
+                payload["customerEmail"] = customer.email
+
+        order_status = self._detect_order_status_filter_from_text(message)
+        if order_status:
+            payload["orderStatus"] = order_status
+
+        order_timeframe = self._detect_order_timeframe_filter_from_text(message)
+        if order_timeframe:
+            payload["orderTimeframe"] = order_timeframe
+
+        return payload
+
+    def _detect_order_status_filter_from_text(self, message: str) -> str | None:
+        normalized = _normalize(message)
+        tokens = set(normalized.split())
+
+        if {"delayed", "delay", "late", "geciken", "gecikti", "gecikmis"} & tokens:
+            return "delayed"
+        if {
+            "packing",
+            "packed",
+            "hazirlaniyor",
+            "hazirlanan",
+            "paketlenen",
+            "paketleniyor",
+        } & tokens:
+            return "packing"
+        if {"shipped", "shipping", "sent", "gonderildi", "kargoda", "yolda"} & tokens:
+            return "shipped"
+        if {"delivered"} & tokens or _phrase_in_normalized_text(
+            normalized,
+            "teslim edildi",
+        ):
+            return "delivered"
+        if {"new", "yeni"} & tokens:
+            return "new"
+
+        return None
+
+    def _detect_order_timeframe_filter_from_text(self, message: str) -> str | None:
+        normalized = _normalize(message)
+        tokens = set(normalized.split())
+
+        if not ({"today", "bugun"} & tokens):
+            return None
+
+        if (
+            {"order", "orders", "siparis", "siparisler", "due", "expected"} & tokens
+            or _phrase_in_normalized_text(normalized, "due today")
+            or _phrase_in_normalized_text(normalized, "bugun teslim")
+        ):
+            return "due_today"
+
+        return None
+
     def _resolve_request(
         self,
         message: str,
@@ -174,7 +255,12 @@ class RequestResolverMixin:
                 "customerEmail": interpretation.entities.customerEmail or "",
             }
         else:
-            intent_payload = self._detect_intent_with_gemini(message, state) or {}
+            intent_payload = self._local_intent_payload(
+                message,
+                state,
+                customer_email=customer_email,
+                customer_name=customer_name,
+            )
 
         customer = self._detect_customer(
             state,
@@ -515,6 +601,12 @@ class RequestResolverMixin:
         if any(word in normalized for word in ["gorev", "task", "todo"]):
             return "task_summary"
 
+        if (
+            {"order", "orders", "siparis", "siparisi", "siparisler"}
+            & set(normalized.split())
+        ):
+            return "order_lookup"
+
         if customer:
             return "order_lookup"
 
@@ -681,6 +773,7 @@ class RequestResolverMixin:
         state: OperationsState,
         customer_email: str | None = None,
         customer_name: str | None = None,
+        include_memory: bool = True,
     ) -> AssistantInterpretation:
         context = self._resolve_request(
             message,
@@ -688,8 +781,10 @@ class RequestResolverMixin:
             customer_email=customer_email,
             customer_name=customer_name,
         )
-        memory_records = query_memory(
-            self._memory_query_for_context(message, context), limit=4
+        memory_records = (
+            query_memory(self._memory_query_for_context(message, context), limit=4)
+            if include_memory
+            else []
         )
         context["memoryRecords"] = memory_records
         entities = self._entities_for_context(context)

@@ -138,7 +138,8 @@ export default function App() {
         customers={app.state.customers}
         messages={app.messages}
         chatInput={app.chatInput}
-        isMutating={app.isMutating}
+        isResponding={app.isChatPending}
+        disabled={app.isMutating || app.isChatPending}
         chatLogRef={app.chatLogRef}
         onOpenMockComposer={app.openMockComposer}
         onMockComposerChange={app.updateMockComposer}

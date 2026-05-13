@@ -34,7 +34,8 @@ export function FloatingAssistant({
   customers,
   messages,
   chatInput,
-  isMutating,
+  isResponding,
+  disabled,
   chatLogRef,
   onOpenMockComposer,
   onMockComposerChange,
@@ -49,7 +50,8 @@ export function FloatingAssistant({
   customers: Customer[];
   messages: ChatMessage[];
   chatInput: string;
-  isMutating: boolean;
+  isResponding: boolean;
+  disabled: boolean;
   chatLogRef: RefObject<HTMLDivElement | null>;
   onOpenMockComposer: (channel: FloatingMockChannel) => void;
   onMockComposerChange: (next: Partial<MockComposerState>) => void;
@@ -162,7 +164,7 @@ export function FloatingAssistant({
                 <time>{message.timestamp}</time>
               </div>
             ))}
-            {isMutating && (
+            {isResponding && (
               <div className="bubble agent typing">
                 <span className="bubble-role">AI</span>
                 <p>
@@ -179,11 +181,11 @@ export function FloatingAssistant({
               onChange={(event) => onChatInputChange(event.target.value)}
               placeholder="Bir şey sorun..."
               aria-label="Mesaj"
-              disabled={isMutating}
+              disabled={disabled}
             />
             <button
               type="submit"
-              disabled={isMutating || !chatInput.trim()}
+              disabled={disabled || !chatInput.trim()}
               aria-label="Gönder">
               <Send size={15} />
             </button>
