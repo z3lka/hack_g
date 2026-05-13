@@ -98,8 +98,10 @@ export type AgentAction = {
     | "lookup_customer"
     | "lookup_shipment"
     | "create_customer_reply_draft"
+    | "create_customer_update_draft"
     | "approve_draft"
-    | "send_email";
+    | "send_email"
+    | "mock_send_message";
   payload: Record<string, string | number | boolean>;
 };
 
@@ -175,6 +177,7 @@ export type MorningInsightsResponse = {
 };
 
 export type MessageIntent =
+  | "customer_update_draft"
   | "order_lookup"
   | "stock_check"
   | "shipment_risk"
@@ -264,4 +267,18 @@ export type DraftApprovalResponse = {
   thread: CustomerThread;
   draft: AssistantDraft;
   action: AgentAction;
+};
+
+export type ContactDraft = {
+  customerId: string;
+  customerName: string;
+  phone: string;
+  email?: string | null;
+  recommendedChannel: "whatsapp" | "telegram" | "email";
+  subject: string;
+  body: string;
+  entities: MessageEntities;
+  confidence: number;
+  requiredReviewReason: string;
+  trackingUrl?: string | null;
 };

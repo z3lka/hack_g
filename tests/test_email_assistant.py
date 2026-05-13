@@ -11,10 +11,15 @@ from backend.app.inbox import (
     list_threads,
     reset_inbox_state,
 )
-from backend.app.models import DraftApprovalRequest
+from backend.app.main import chat
+from backend.app.models import ChatRequest, DraftApprovalRequest
 
 
 SMTP_ENV_KEYS = [
+    "GEMINI_API_KEY",
+    "GOOGLE_API_KEY",
+    "COMMERCE_API_BASE_URL",
+    "COMMERCE_API_TOKEN",
     "SMTP_HOST",
     "SMTP_PORT",
     "SMTP_USERNAME",
@@ -140,13 +145,76 @@ class EmailAssistantTests(unittest.TestCase):
         self.assertEqual(response.thread.messages[-1].direction, "outbound")
         self.assertEqual(response.action.type, "send_email")
 
+    def test_chat_customer_update_command_returns_reviewable_contact_draft(self) -> None:
+        response = chat(
+            ChatRequest(
+                message="send a message to Mina about order #128 with tracking"
+            )
+        )
+
+        draft = response.contactDraft
+        self.assertIsNotNone(draft)
+        assert draft is not None
+        self.assertEqual(draft.customerId, "c-1")
+        self.assertEqual(draft.customerName, "Mina Yılmaz")
+        self.assertEqual(draft.recommendedChannel, "whatsapp")
+        self.assertEqual(draft.entities.orderId, "128")
+        self.assertEqual(draft.entities.shipmentId, "s-128")
+        self.assertEqual(draft.entities.trackingCode, "MNG128-TR")
+        self.assertIsNone(draft.entities.productId)
+        self.assertIn("https://tracking.cirak.local/mng-kargo/MNG128-TR", draft.body)
+        self.assertIn("MNG Kargo", draft.body)
+        self.assertIn("owner review", response.agentMessage.text.lower())
+        self.assertIn(
+            "create_customer_update_draft",
+            {action.type for action in response.actions},
+        )
+        self.assertNotIn("check_stock", {action.type for action in response.actions})
+
+    def test_customer_update_missing_order_returns_no_draft(self) -> None:
+        response = chat(
+            ChatRequest(
+                message="send a message to Mina about order #111 with tracking"
+            )
+        )
+
+        self.assertIsNone(response.contactDraft)
+        self.assertIn("could not find order 111", response.agentMessage.text.lower())
+
+    def test_customer_update_order_customer_mismatch_blocks_draft(self) -> None:
+        response = chat(
+            ChatRequest(
+                message="send a message to Selin about order #128 with tracking"
+            )
+        )
+
+        self.assertIsNone(response.contactDraft)
+        self.assertIn("Order 128 belongs to Mina Yılmaz", response.agentMessage.text)
+        self.assertIn("not Selin Kaya", response.agentMessage.text)
+
+    def test_delayed_order_collection_question_returns_order_details(self) -> None:
+        result = agent.generate_customer_reply("which orders are delayed?", self.state)
+
+        self.assertIn("3 delayed orders", result.response)
+        self.assertIn("#131", result.response)
+        self.assertIn("#141", result.response)
+        self.assertIn("#149", result.response)
+
+    def test_customer_lookup_question_returns_contact_and_latest_order_context(self) -> None:
+        result = agent.generate_customer_reply("who is Mina?", self.state)
+
+        self.assertIn("Mina Yılmaz", result.response)
+        self.assertIn("WhatsApp", result.response)
+        self.assertIn("mina.yilmaz@example.com", result.response)
+        self.assertIn("#128", result.response)
+
 
 def _inbound_message(provider_message_id: str) -> InboundEmail:
     return InboundEmail(
         provider_message_id=provider_message_id,
         from_name="Mina Yılmaz",
         from_email="mina.yilmaz@example.com",
-        to_email="support@orbio.local",
+        to_email="support@cirak.local",
         subject="Sipariş 128 teslimat",
         body="Merhaba, sipariş 128 ne zaman gelir?",
         received_at="2026-05-12T10:00:00+03:00",

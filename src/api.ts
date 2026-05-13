@@ -2,6 +2,7 @@ import type {
   AgentAction,
   ChatMessage,
   ConnectorHealth,
+  ContactDraft,
   CustomerThread,
   DraftApprovalResponse,
   InboxSyncResponse,
@@ -20,6 +21,7 @@ export type ChatResponse = {
   agentMessage: ChatMessage;
   actions: AgentAction[];
   state: OperationsState;
+  contactDraft?: ContactDraft | null;
 };
 
 export type StateActionResponse = {

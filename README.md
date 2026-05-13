@@ -1,10 +1,10 @@
-# Orbio AI Ops
+# çırak AI Ops
 
 Working website prototype for a hackathon challenge focused on AI-supported operations for SMEs and cooperatives. The app uses a React frontend with a FastAPI/Python backend, plus a local business-memory layer powered by ChromaDB and Gemini-ready RAG.
 
 ## Demo Story
 
-Orbio AI Ops is a single-page operations dashboard for a small e-commerce business with 20-200 products and 10-100 daily orders. It shows how an AI assistant remembers customer habits, supplier behavior, and recurring stock risks, then turns that memory into proactive morning alerts.
+çırak AI Ops is a single-page operations dashboard for a small e-commerce business with 20-200 products and 10-100 daily orders. It shows how an AI assistant remembers customer habits, supplier behavior, and recurring stock risks, then turns that memory into proactive morning alerts.
 
 Suggested 3-minute demo:
 

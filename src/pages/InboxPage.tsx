@@ -301,6 +301,7 @@ function buildLinkedContext(draft: AssistantDraft, state: OperationsState) {
 
 function labelIntent(intent: MessageIntent): string {
   const labels: Record<MessageIntent, string> = {
+    customer_update_draft: "Customer update draft",
     order_lookup: "Order lookup",
     stock_check: "Stock question",
     shipment_risk: "Shipment tracking",

@@ -154,6 +154,7 @@ export default function App() {
           draft={app.draftModal}
           notice={app.draftNotice}
           onClose={app.closeDraft}
+          onSubjectChange={app.updateDraftSubject}
           onBodyChange={app.updateDraftBody}
           onMockSend={app.mockSendDraft}
           onCopy={app.copyDraft}

@@ -192,7 +192,7 @@ def approve_draft(
                 threadId=thread.id,
                 providerMessageId=send_reference,
                 direction="outbound",
-                fromName="Orbio Ops",
+                fromName="çırak Ops",
                 fromEmail=_smtp_from_email(),
                 toEmail=draft.toEmail,
                 subject=draft.subject,
@@ -419,7 +419,7 @@ def _smtp_configured() -> bool:
 
 
 def _smtp_from_email() -> str:
-    return os.getenv("SMTP_FROM_EMAIL", "support@orbio.local")
+    return os.getenv("SMTP_FROM_EMAIL", "support@cirak.local")
 
 
 def _now() -> str:

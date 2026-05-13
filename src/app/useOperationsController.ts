@@ -41,6 +41,7 @@ import type {
 import type {
   AgentAction,
   ConnectorHealth,
+  ContactDraft,
   CustomerThread,
   InventoryAlert,
   MemoryRecord,
@@ -316,6 +317,9 @@ export function useOperationsController() {
       ]);
       prependActions(response.actions);
       setState(response.state);
+      if (response.contactDraft) {
+        openContactDraft(response.contactDraft);
+      }
       setChatInput("");
     });
   }
@@ -498,12 +502,35 @@ export function useOperationsController() {
     });
   }
 
+  function openContactDraft(contactDraft: ContactDraft) {
+    setDraftNotice("");
+    setDraftModal({
+      title: `Müşteri Güncellemesi: ${contactDraft.customerName}`,
+      subtitle: `Önerilen kanal: ${getMockSendChannelLabel(contactDraft.recommendedChannel)}`,
+      subject: contactDraft.subject,
+      body: contactDraft.body,
+      target: {
+        name: contactDraft.customerName,
+        kind: "customer",
+        phone: contactDraft.phone,
+        email: contactDraft.email ?? "Mock e-posta yok",
+      },
+      recommendedChannel: contactDraft.recommendedChannel,
+      confidence: contactDraft.confidence,
+      reviewReason: contactDraft.requiredReviewReason,
+    });
+  }
+
   async function copyDraft() {
     if (!draftModal) {
       return;
     }
 
-    await navigator.clipboard.writeText(draftModal.body);
+    await navigator.clipboard.writeText(
+      draftModal.subject
+        ? `Subject: ${draftModal.subject}\n\n${draftModal.body}`
+        : draftModal.body,
+    );
     prependActions([
       {
         id: crypto.randomUUID(),
@@ -517,6 +544,11 @@ export function useOperationsController() {
   function updateDraftBody(body: string) {
     setDraftNotice("");
     setDraftModal((current) => (current ? { ...current, body } : current));
+  }
+
+  function updateDraftSubject(subject: string) {
+    setDraftNotice("");
+    setDraftModal((current) => (current ? { ...current, subject } : current));
   }
 
   function mockSendDraft(channel: MockSendChannel) {
@@ -533,12 +565,13 @@ export function useOperationsController() {
       {
         id: crypto.randomUUID(),
         label: `${channelLabel} ile mock gönderildi: ${draftModal.target.name} (${destination})`,
-        type: "memory_insight_generated",
+        type: "mock_send_message",
         payload: {
           channel,
           recipient: draftModal.target.name,
           destination,
           draft: draftModal.title,
+          subject: draftModal.subject ?? "",
           message: draftModal.body,
         },
       },
@@ -551,6 +584,7 @@ export function useOperationsController() {
     setMockComposer({
       channel,
       customerId: firstCustomer?.id ?? "",
+      subject: channel === "email" ? "Sipariş güncellemesi" : "",
       message: getDefaultMockChannelMessage(channel),
       notice: "",
     });
@@ -574,18 +608,23 @@ export function useOperationsController() {
     }
 
     const channelLabel = getMockSendChannelLabel(mockComposer.channel);
-    const notice = `${channelLabel} mock gönderim: ${customer.name} (${customer.phone})`;
+    const destination =
+      mockComposer.channel === "email"
+        ? (customer.email ?? "Mock e-posta yok")
+        : customer.phone;
+    const notice = `${channelLabel} mock gönderim: ${customer.name} (${destination})`;
 
     setMockComposer({ ...mockComposer, notice });
     prependActions([
       {
         id: crypto.randomUUID(),
         label: `${channelLabel} mock mesaj gönderildi: ${customer.name}`,
-        type: "memory_insight_generated",
+        type: "mock_send_message",
         payload: {
           channel: mockComposer.channel,
           recipient: customer.name,
-          destination: customer.phone,
+          destination,
+          subject: mockComposer.subject,
           message: mockComposer.message.trim(),
         },
       },
@@ -659,6 +698,7 @@ export function useOperationsController() {
     closeDraft,
     copyDraft,
     updateDraftBody,
+    updateDraftSubject,
     mockSendDraft,
     openMockComposer,
     updateMockComposer,

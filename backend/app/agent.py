@@ -11,6 +11,8 @@ from .models import (
     AgentResult,
     AssistantInterpretation,
     ChatMessage,
+    ContactDraft,
+    ContactDraftChannel,
     Customer,
     MessageEntities,
     OperationsState,
@@ -36,7 +38,18 @@ PRODUCT_MATCH_STOPWORDS = {
     "var",
     "mi",
 }
+CUSTOMER_MATCH_STOPWORDS = {
+    "bey",
+    "hanim",
+    "market",
+    "kafe",
+    "cafe",
+    "otel",
+    "satin",
+    "alma",
+}
 INTENTS = {
+    "customer_update_draft",
     "stock_check",
     "order_lookup",
     "shipment_risk",
@@ -139,7 +152,39 @@ class OperationsAgent:
     ) -> AgentResult:
         interpretation = self.interpret_message(message, state)
         context = self._resolve_request(message, state, interpretation=interpretation)
-        actions = interpretation.actions
+        actions = [*interpretation.actions]
+
+        if context.get("intent") == "customer_update_draft":
+            draft = self._build_contact_draft(message, context, state, interpretation)
+            if draft:
+                actions.append(
+                    AgentAction(
+                        id=str(uuid4()),
+                        label=f"Created customer update draft for {draft.customerName}",
+                        type="create_customer_update_draft",
+                        payload={
+                            "customerId": draft.customerId,
+                            "orderId": draft.entities.orderId or "",
+                            "channel": draft.recommendedChannel,
+                        },
+                    )
+                )
+                return AgentResult(
+                    response=self._contact_draft_ready_reply(message, draft),
+                    actions=actions,
+                    contactDraft=draft,
+                )
+
+            return AgentResult(
+                response=self._contact_draft_blocked_reply(message, context, state),
+                actions=actions,
+            )
+
+        if context.get("matchingOrders") or context.get("intent") == "customer_lookup":
+            return AgentResult(
+                response=self._fallback_reply(message, context, state),
+                actions=actions,
+            )
 
         prompt = self._build_grounded_reply_prompt(message, context, state)
         response_text = gemini_client.generate_text(prompt)
@@ -165,7 +210,9 @@ class OperationsAgent:
             customer_email=customer_email,
             customer_name=customer_name,
         )
-        memory_records = query_memory(self._memory_query_for_context(message, context), limit=4)
+        memory_records = query_memory(
+            self._memory_query_for_context(message, context), limit=4
+        )
         context["memoryRecords"] = memory_records
         entities = self._entities_for_context(context)
         confidence = self._confidence_for_context(context)
@@ -210,7 +257,11 @@ class OperationsAgent:
             interpretation,
         )
         response_text = gemini_client.generate_text(prompt)
-        body = response_text.strip() if response_text else self._fallback_reply(message, context, state)
+        body = (
+            response_text.strip()
+            if response_text
+            else self._fallback_reply(message, context, state)
+        )
 
         return self._reply_subject(subject), body, interpretation
 
@@ -247,7 +298,7 @@ class OperationsAgent:
         for alias, product_id in sorted(
             alias_to_id.items(), key=lambda item: len(item[0]), reverse=True
         ):
-            if alias in normalized:
+            if _phrase_in_normalized_text(normalized, alias):
                 product = self.check_stock(product_id, state)
                 if product:
                     return product
@@ -260,7 +311,7 @@ class OperationsAgent:
             product_name = _normalize(product.name)
             product_tokens = _product_match_tokens(product_name)
 
-            if product_name in normalized:
+            if _phrase_in_normalized_text(normalized, product_name):
                 score = 100
             else:
                 overlap = query_tokens & product_tokens
@@ -298,30 +349,31 @@ class OperationsAgent:
             f"- {c.id}: {c.name} ({c.email or 'no email'})" for c in state.customers
         )
         prompt = f"""
-Classify this operations assistant message.
-Return only JSON matching the schema.
+                  Classify this operations assistant message.
+                  Return only JSON matching the schema.
 
-Message:
-"{message}"
+                  Message:
+                  "{message}"
 
-Valid intents:
-- stock_check: product stock, daily sales, remaining days, restock need
-- order_lookup: order status, order items, ETA, customer order question
-- shipment_risk: cargo, shipping, delivery risks
-- issue_check: errors, failures, warnings, exceptions, operational issues
-- customer_lookup: customer rhythm or customer-specific question
-- task_summary: team task or todo question
-- operations_summary: broad "what needs attention" question
-- return_exchange: return, exchange, cancellation, or refund request
-- complaint: damaged item, wrong item, angry customer, or service complaint
-- general: anything else
+                  Valid intents:
+                  - customer_update_draft: owner asks to send, message, tell, or update a customer through WhatsApp, Telegram, or email
+                  - stock_check: product stock, daily sales, remaining days, restock need
+                  - order_lookup: order status, order items, ETA, customer order question
+                  - shipment_risk: cargo, shipping, delivery risks
+                  - issue_check: errors, failures, warnings, exceptions, operational issues
+                  - customer_lookup: customer rhythm or customer-specific question
+                  - task_summary: team task or todo question
+                  - operations_summary: broad "what needs attention" question
+                  - return_exchange: return, exchange, cancellation, or refund request
+                  - complaint: damaged item, wrong item, angry customer, or service complaint
+                  - general: anything else
 
-Products:
-{product_lines}
+                  Products:
+                  {product_lines}
 
-Customers:
-{customer_lines}
-""".strip()
+                  Customers:
+                  {customer_lines}
+                  """.strip()
         payload = gemini_client.generate_json(prompt, INTENT_SCHEMA)
 
         if not payload:
@@ -362,18 +414,55 @@ Customers:
             state,
         )
         intent = intent_payload.get("intent")
+        explicit_channel = _detect_requested_channel(message)
 
         if intent not in INTENTS:
             intent = self._heuristic_intent(message, order_id, product)
 
+        if _is_customer_update_request(message):
+            intent = "customer_update_draft"
+
         order_resolved_from_customer = False
-        if not order_id and customer and intent in {"order_lookup", "shipment_risk"}:
+        if not order_id and customer and intent in {
+            "order_lookup",
+            "shipment_risk",
+            "customer_lookup",
+            "customer_update_draft",
+        }:
             latest_order = self._latest_order_for_customer(customer, state)
             if latest_order:
                 order_id = latest_order.id
                 order_resolved_from_customer = True
 
         order_context = self.lookup_order_status(order_id, state) if order_id else None
+        named_customer = customer
+        order_customer = None
+        customer_order_mismatch = False
+        if order_context:
+            order, _ = order_context
+            order_customer = next(
+                (
+                    candidate
+                    for candidate in state.customers
+                    if candidate.id == order.customerId
+                ),
+                None,
+            )
+            if intent == "customer_update_draft":
+                if (
+                    named_customer
+                    and order_customer
+                    and named_customer.id != order_customer.id
+                ):
+                    customer_order_mismatch = True
+                elif order_customer and not customer:
+                    customer = order_customer
+
+        matching_orders = (
+            self._matching_orders_for_message(message, state)
+            if intent == "order_lookup" and not order_id
+            else []
+        )
         active_issues = [issue for issue in state.issues if not issue.resolved]
         active_alerts = get_commerce_connector().stock_alerts(state)
         risky_shipments = self.detect_shipping_risks(state)
@@ -386,6 +475,12 @@ Customers:
             "orderContext": order_context,
             "product": product,
             "customer": customer,
+            "namedCustomer": named_customer,
+            "orderCustomer": order_customer,
+            "customerOrderMismatch": customer_order_mismatch,
+            "requestedChannel": explicit_channel,
+            "matchingOrders": matching_orders,
+            "orderCollectionLabel": self._order_collection_label(message),
             "activeIssues": active_issues,
             "activeAlerts": active_alerts,
             "riskyShipments": risky_shipments,
@@ -410,10 +505,18 @@ Customers:
                 return customer
 
         normalized = _normalize(message)
+        message_tokens = set(normalized.split())
         for customer in state.customers:
             if _normalize(customer.name) in normalized:
                 return customer
             if customer.email and _normalize(customer.email) in normalized:
+                return customer
+            name_tokens = {
+                token
+                for token in _normalize(customer.name).split()
+                if len(token) >= 3 and token not in CUSTOMER_MATCH_STOPWORDS
+            }
+            if name_tokens & message_tokens:
                 return customer
 
         return None
@@ -423,11 +526,15 @@ Customers:
         customer: Customer,
         state: OperationsState,
     ) -> Order | None:
-        customer_orders = [order for order in state.orders if order.customerId == customer.id]
+        customer_orders = [
+            order for order in state.orders if order.customerId == customer.id
+        ]
         if not customer_orders:
             return None
 
-        return sorted(customer_orders, key=lambda order: order.createdAt, reverse=True)[0]
+        return sorted(customer_orders, key=lambda order: order.createdAt, reverse=True)[
+            0
+        ]
 
     def _entities_for_context(self, context: dict) -> MessageEntities:
         product = context.get("product")
@@ -448,6 +555,18 @@ Customers:
 
     def _confidence_for_context(self, context: dict) -> float:
         intent = context.get("intent")
+
+        if intent == "customer_update_draft":
+            if context.get("customerOrderMismatch"):
+                return 0.2
+            if context.get("orderContext") and context.get("customer"):
+                return 0.82 if context.get("orderResolvedFromCustomer") else 0.94
+            if context.get("orderId") and not context.get("orderContext"):
+                return 0.32
+            return 0.45
+
+        if context.get("matchingOrders"):
+            return 0.88
 
         if context.get("orderContext"):
             return 0.74 if context.get("orderResolvedFromCustomer") else 0.92
@@ -472,11 +591,36 @@ Customers:
     def _required_review_reason(self, context: dict, confidence: float) -> str | None:
         reasons = ["Human approval is required before any customer email is sent."]
 
-        if context.get("intent") in {"order_lookup", "shipment_risk"} and not context.get("orderContext"):
+        if context.get("intent") == "customer_update_draft":
+            reasons = [
+                "Owner review is required before any customer message is sent."
+            ]
+            if context.get("requestedChannel"):
+                reasons.append(
+                    f"Requested channel: {context['requestedChannel']}."
+                )
+            if context.get("orderResolvedFromCustomer"):
+                reasons.append("Order ID was inferred from the customer record.")
+            if context.get("customerOrderMismatch"):
+                reasons.append("Named customer does not match the order owner.")
+            if context.get("orderId") and not context.get("orderContext"):
+                reasons.append("No matching order was found.")
+            if not context.get("customer"):
+                reasons.append("No target customer was identified.")
+            if confidence < 0.7:
+                reasons.append("Assistant confidence is below the auto-clear threshold.")
+            return " ".join(reasons)
+
+        if context.get("intent") in {
+            "order_lookup",
+            "shipment_risk",
+        } and not context.get("orderContext"):
             reasons.append("No matching order was found.")
 
         if context.get("orderResolvedFromCustomer"):
-            reasons.append("Order ID was inferred from the customer email rather than stated explicitly.")
+            reasons.append(
+                "Order ID was inferred from the customer email rather than stated explicitly."
+            )
 
         if context.get("intent") == "stock_check" and not context.get("product"):
             reasons.append("The requested product was not identified.")
@@ -505,22 +649,64 @@ Customers:
     ) -> str:
         normalized = _normalize(message)
 
+        if _is_customer_update_request(message):
+            return "customer_update_draft"
+
         if order_id:
             return "order_lookup"
 
-        if any(word in normalized for word in ["iade", "degisim", "iptal", "refund", "return", "exchange", "cancel"]):
+        if _looks_like_customer_lookup(normalized):
+            return "customer_lookup"
+
+        if any(
+            word in normalized
+            for word in [
+                "iade",
+                "degisim",
+                "iptal",
+                "refund",
+                "return",
+                "exchange",
+                "cancel",
+            ]
+        ):
             return "return_exchange"
 
-        if any(word in normalized for word in ["sikayet", "kirik", "hasar", "yanlis", "complaint", "damaged", "wrong", "broken"]):
+        if any(
+            word in normalized
+            for word in [
+                "sikayet",
+                "kirik",
+                "hasar",
+                "yanlis",
+                "complaint",
+                "damaged",
+                "wrong",
+                "broken",
+            ]
+        ):
             return "complaint"
 
-        if product or any(word in normalized for word in ["stok", "stock", "kalan", "restock"]):
+        if product or any(
+            word in normalized for word in ["stok", "stock", "kalan", "restock"]
+        ):
             return "stock_check"
 
-        if any(word in normalized for word in ["siparis", "order", "nerede", "where", "gelir", "arrive", "eta", "teslim", "delivery", "takip", "tracking"]):
+        if _looks_like_order_lookup(normalized):
             return "order_lookup"
 
-        if any(word in normalized for word in ["hata", "error", "issue", "uyari", "warning", "problem", "fail"]):
+        if any(
+            word in normalized
+            for word in [
+                "hata",
+                "error",
+                "issue",
+                "uyari",
+                "warning",
+                "problem",
+                "fail",
+            ]
+        ):
             return "issue_check"
 
         if any(word in normalized for word in ["kargo", "cargo", "shipment", "teslim"]):
@@ -601,7 +787,10 @@ Customers:
                     id=str(uuid4()),
                     label=f"Looked up shipment {shipment.trackingCode}",
                     type="lookup_shipment",
-                    payload={"orderId": shipment.orderId, "trackingCode": shipment.trackingCode},
+                    payload={
+                        "orderId": shipment.orderId,
+                        "trackingCode": shipment.trackingCode,
+                    },
                 )
             )
 
@@ -640,6 +829,251 @@ Customers:
             )
 
         return actions
+
+    def _matching_orders_for_message(
+        self,
+        message: str,
+        state: OperationsState,
+    ) -> list[Order]:
+        normalized = _normalize(message)
+        tokens = set(normalized.split())
+
+        if "delayed" in tokens or "gecik" in normalized:
+            return [order for order in state.orders if order.status == "delayed"]
+
+        if "packing" in tokens or "paket" in normalized:
+            orders = [order for order in state.orders if order.status == "packing"]
+            if _mentions_today(normalized):
+                return [order for order in orders if order.dueToday]
+            return orders
+
+        if _mentions_due_today(normalized):
+            return [
+                order
+                for order in state.orders
+                if order.dueToday and order.status != "delivered"
+            ]
+
+        return []
+
+    def _order_collection_label(self, message: str) -> str:
+        normalized = _normalize(message)
+        tokens = set(normalized.split())
+
+        if "delayed" in tokens or "gecik" in normalized:
+            return "delayed"
+        if "packing" in tokens or "paket" in normalized:
+            return "packing today" if _mentions_today(normalized) else "packing"
+        if _mentions_due_today(normalized):
+            return "due today"
+        return "matching"
+
+    def _order_summary_line(self, order: Order, state: OperationsState) -> str:
+        customer = next(
+            (
+                candidate
+                for candidate in state.customers
+                if candidate.id == order.customerId
+            ),
+            None,
+        )
+        shipment = next(
+            (
+                candidate
+                for candidate in state.shipments
+                if candidate.orderId == order.id
+            ),
+            None,
+        )
+        shipment_text = (
+            f", {shipment.carrier} ETA {shipment.eta}, risk {shipment.risk}"
+            if shipment
+            else ""
+        )
+        return (
+            f"#{order.id} {order.status} for {customer.name if customer else order.customerId}, "
+            f"{summarize_order_items(order, state)}, {order.total} TRY{shipment_text}"
+        )
+
+    def _build_contact_draft(
+        self,
+        message: str,
+        context: dict,
+        state: OperationsState,
+        interpretation: AssistantInterpretation,
+    ) -> ContactDraft | None:
+        if context.get("customerOrderMismatch"):
+            return None
+
+        order_context = context.get("orderContext")
+        customer = context.get("customer")
+        if not order_context or not customer:
+            return None
+
+        order, shipment = order_context
+        channel = context.get("requestedChannel") or _default_contact_channel(customer)
+        tracking_url = _tracking_url(shipment) if shipment else None
+        subject = (
+            f"Sipariş #{order.id} güncellemesi"
+            if _prefers_turkish(message)
+            else f"Update on order #{order.id}"
+        )
+        confidence = interpretation.confidence
+        review_reason = (
+            interpretation.requiredReviewReason
+            or "Owner review is required before any customer message is sent."
+        )
+
+        return ContactDraft(
+            customerId=customer.id,
+            customerName=customer.name,
+            phone=customer.phone,
+            email=customer.email,
+            recommendedChannel=channel,
+            subject=subject,
+            body=self._contact_draft_body(
+                message,
+                customer,
+                order,
+                shipment,
+                tracking_url,
+                state,
+            ),
+            entities=MessageEntities(
+                orderId=order.id,
+                customerId=customer.id,
+                customerName=customer.name,
+                customerEmail=customer.email,
+                shipmentId=shipment.id if shipment else None,
+                trackingCode=shipment.trackingCode if shipment else None,
+            ),
+            confidence=confidence,
+            requiredReviewReason=review_reason,
+            trackingUrl=tracking_url,
+        )
+
+    def _contact_draft_body(
+        self,
+        message: str,
+        customer: Customer,
+        order: Order,
+        shipment: Shipment | None,
+        tracking_url: str | None,
+        state: OperationsState,
+    ) -> str:
+        items = summarize_order_items(order, state)
+
+        if _prefers_turkish(message):
+            lines = [
+                f"Merhaba {customer.name},",
+                "",
+                (
+                    f"Sipariş #{order.id} için kısa bir güncelleme paylaşmak istedik. "
+                    f"Güncel durum: {order.status}."
+                ),
+                f"Sipariş içeriği: {items}.",
+            ]
+            if shipment and tracking_url:
+                lines.extend(
+                    [
+                        f"Kargo firması: {shipment.carrier}. Tahmini teslim: {shipment.eta}.",
+                        f"Son kargo hareketi: {shipment.lastScan}.",
+                        f"Takip bağlantısı: {tracking_url}",
+                    ]
+                )
+            else:
+                lines.append(
+                    "Takip bilgisi henüz oluşmadı; kargo kaydı açıldığında paylaşacağız."
+                )
+            lines.append("")
+            lines.append("Sevgiler,")
+            lines.append("çırak Ops")
+            return "\n".join(lines)
+
+        lines = [
+            f"Hi {customer.name},",
+            "",
+            f"Quick update on order #{order.id}: the current status is {order.status}.",
+            f"Order items: {items}.",
+        ]
+        if shipment and tracking_url:
+            lines.extend(
+                [
+                    f"Carrier: {shipment.carrier}. Estimated delivery: {shipment.eta}.",
+                    f"Latest scan: {shipment.lastScan}.",
+                    f"Tracking link: {tracking_url}",
+                ]
+            )
+        else:
+            lines.append(
+                "Tracking is not available yet; we will share it as soon as "
+                "the carrier record is created."
+            )
+        lines.append("")
+        lines.append("Best,")
+        lines.append("çırak Ops")
+        return "\n".join(lines)
+
+    def _contact_draft_ready_reply(self, message: str, draft: ContactDraft) -> str:
+        channel = get_channel_display_name(draft.recommendedChannel)
+        if _prefers_turkish(message):
+            return (
+                f"{draft.customerName} için {channel} kanalında incelemeye hazır "
+                f"bir müşteri güncelleme taslağı oluşturdum."
+            )
+        return (
+            f"I prepared a customer update draft for {draft.customerName} "
+            f"on {channel} for owner review."
+        )
+
+    def _contact_draft_blocked_reply(
+        self,
+        message: str,
+        context: dict,
+        state: OperationsState,
+    ) -> str:
+        order_id = context.get("orderId")
+
+        if context.get("customerOrderMismatch"):
+            named_customer = context.get("namedCustomer")
+            order_customer = context.get("orderCustomer")
+            if _prefers_turkish(message):
+                return (
+                    f"Sipariş {order_id}, {named_customer.name if named_customer else 'seçilen müşteri'} "
+                    f"yerine {order_customer.name if order_customer else 'başka bir müşteri'} "
+                    "adına kayıtlı. "
+                    "Bu nedenle taslak oluşturmadım."
+                )
+            return (
+                f"Order {order_id} belongs to "
+                f"{order_customer.name if order_customer else 'another customer'}, "
+                f"not {named_customer.name if named_customer else 'the named customer'}. "
+                "I did not create a draft."
+            )
+
+        if order_id and not context.get("orderContext"):
+            if _prefers_turkish(message):
+                return (
+                    f"Sipariş {order_id} bulunamadı; müşteri mesajı taslağı oluşturmadım."
+                )
+            return (
+                f"I could not find order {order_id}, so I did not create "
+                "a customer message draft."
+            )
+
+        if not context.get("customer"):
+            if _prefers_turkish(message):
+                return "Hedef müşteriyi belirleyemedim; taslak oluşturmadım."
+            return "I could not identify the target customer, so I did not create a draft."
+
+        if not state.orders:
+            return "No orders are available for drafting a customer update."
+
+        return (
+            "Taslak oluşturmak için sipariş ve müşteri bilgisini netleştirmem gerekiyor."
+            if _prefers_turkish(message)
+            else "I need a clear customer and order before creating a draft."
+        )
 
     def _build_grounded_reply_prompt(
         self, message: str, context: dict, state: OperationsState
@@ -702,7 +1136,11 @@ Relevant memory:
 
     def _reply_subject(self, subject: str) -> str:
         normalized = subject.strip()
-        return normalized if normalized.lower().startswith("re:") else f"Re: {normalized or 'Customer message'}"
+        return (
+            normalized
+            if normalized.lower().startswith("re:")
+            else f"Re: {normalized or 'Customer message'}"
+        )
 
     def _grounded_context_lines(self, context: dict, state: OperationsState) -> str:
         lines: list[str] = []
@@ -718,7 +1156,9 @@ Relevant memory:
 
         if order_context:
             order, shipment = order_context
-            customer = next((c for c in state.customers if c.id == order.customerId), None)
+            customer = next(
+                (c for c in state.customers if c.id == order.customerId), None
+            )
             lines.append(
                 f"Order {order.id}: status={order.status}, customer={customer.name if customer else order.customerId}, "
                 f"items={summarize_order_items(order, state)}, total={order.total} TRY, dueToday={order.dueToday}."
@@ -728,8 +1168,33 @@ Relevant memory:
                     f"Shipment for order {order.id}: carrier={shipment.carrier}, tracking={shipment.trackingCode}, "
                     f"risk={shipment.risk}, eta={shipment.eta}, lastScan={shipment.lastScan}, notified={shipment.notified}."
                 )
+            elif context.get("intent") == "customer_update_draft":
+                lines.append(f"Shipment for order {order.id}: tracking is not available yet.")
         elif context.get("orderId"):
             lines.append(f"Order {context['orderId']} was not found.")
+
+        matching_orders = context.get("matchingOrders") or []
+        if matching_orders:
+            label = context.get("orderCollectionLabel") or "matching"
+            lines.append(f"{len(matching_orders)} {label} orders found.")
+            for order in matching_orders[:12]:
+                order_customer = next(
+                    (item for item in state.customers if item.id == order.customerId),
+                    None,
+                )
+                shipment = next(
+                    (item for item in state.shipments if item.orderId == order.id),
+                    None,
+                )
+                shipment_summary = (
+                    f", shipment={shipment.carrier} eta={shipment.eta} risk={shipment.risk}"
+                    if shipment
+                    else ", shipment=N/A"
+                )
+                lines.append(
+                    f"Order {order.id}: status={order.status}, customer={order_customer.name if order_customer else order.customerId}, "
+                    f"items={summarize_order_items(order, state)}, total={order.total} TRY, dueToday={order.dueToday}{shipment_summary}."
+                )
 
         if product:
             alert = next(
@@ -788,7 +1253,10 @@ Relevant memory:
             record_text = record.text if hasattr(record, "text") else str(record)
             lines.append(f"Relevant memory: {record_text}")
 
-        return "\n".join(f"- {line}" for line in lines) or "- No matching operational data found."
+        return (
+            "\n".join(f"- {line}" for line in lines)
+            or "- No matching operational data found."
+        )
 
     def _build_supplier_draft_prompt(
         self,
@@ -826,7 +1294,40 @@ Relevant business memory:
         order_id = context.get("orderId")
         order_context = context.get("orderContext")
         product = context.get("product")
+        customer = context.get("customer")
         intent = context.get("intent")
+        matching_orders = context.get("matchingOrders") or []
+
+        if matching_orders:
+            label = context.get("orderCollectionLabel") or "matching"
+            details = "; ".join(
+                self._order_summary_line(order, state) for order in matching_orders[:6]
+            )
+            if _prefers_turkish(message):
+                return f"{len(matching_orders)} {label} sipariş buldum: {details}."
+            return f"I found {len(matching_orders)} {label} orders: {details}."
+
+        if intent == "customer_lookup" and customer:
+            latest = order_context[0] if order_context else None
+            latest_text = (
+                f" Latest order is #{latest.id} with status {latest.status}."
+                if latest
+                else " No recent order is recorded."
+            )
+            if _prefers_turkish(message):
+                latest_text_tr = (
+                    f" Son siparişi #{latest.id}, durum {latest.status}."
+                    if latest
+                    else " Kayıtlı yakın sipariş yok."
+                )
+                return (
+                    f"{customer.name}: varsayılan kanal {customer.channel}, telefon {customer.phone}, "
+                    f"e-posta {customer.email or 'N/A'}.{latest_text_tr}"
+                )
+            return (
+                f"{customer.name}: default channel {customer.channel}, phone {customer.phone}, "
+                f"email {customer.email or 'N/A'}.{latest_text}"
+            )
 
         if order_id:
             if order_context is None:
@@ -978,7 +1479,11 @@ Relevant business memory:
                 owner="Operasyon",
                 title=f"Hata çöz: {issue.title}",
                 priority="high" if issue.severity == "critical" else "medium",
-                orderId=issue.entityId if issue.category in {"order", "shipping", "payment"} else None,
+                orderId=(
+                    issue.entityId
+                    if issue.category in {"order", "shipping", "payment"}
+                    else None
+                ),
                 status="open",
             )
             for issue in state.issues
@@ -1028,7 +1533,128 @@ def _normalize(value: str) -> str:
     normalized = value.replace("İ", "i").replace("I", "i").lower()
     for source, target in replacements.items():
         normalized = normalized.replace(source, target)
-    return re.sub(r"[^a-z0-9\s]", " ", normalized).strip()
+    return " ".join(re.sub(r"[^a-z0-9\s]", " ", normalized).split())
+
+
+def _phrase_in_normalized_text(normalized: str, phrase: str) -> bool:
+    normalized_phrase = _normalize(phrase)
+    if not normalized_phrase:
+        return False
+
+    return bool(
+        re.search(rf"(?:^|\s){re.escape(normalized_phrase)}(?:\s|$)", normalized)
+    )
+
+
+def _is_customer_update_request(message: str) -> bool:
+    normalized = _normalize(message)
+    tokens = set(normalized.split())
+
+    if {"tell", "notify"} & tokens:
+        return True
+    if "message" in tokens and ({"send", "draft", "write"} & tokens or "to" in tokens):
+        return True
+    if "send" in tokens and (
+        {"email", "mail", "whatsapp", "telegram"} & tokens
+        or _phrase_in_normalized_text(normalized, "customer update")
+    ):
+        return True
+    if "update" in tokens and ({"customer", "client"} & tokens or "about" in tokens):
+        return True
+    if {"mesaj", "gonder", "gonderin", "bilgilendir", "haber"} & tokens:
+        return True
+
+    return False
+
+
+def _detect_requested_channel(message: str) -> ContactDraftChannel | None:
+    normalized = _normalize(message)
+    tokens = set(normalized.split())
+
+    if "telegram" in tokens:
+        return "telegram"
+    if "whatsapp" in tokens or _phrase_in_normalized_text(normalized, "whats app"):
+        return "whatsapp"
+    if {"email", "mail", "eposta"} & tokens or _phrase_in_normalized_text(
+        normalized,
+        "e posta",
+    ):
+        return "email"
+
+    return None
+
+
+def _default_contact_channel(customer: Customer) -> ContactDraftChannel:
+    if customer.channel == "Email" and customer.email:
+        return "email"
+    if customer.phone:
+        return "whatsapp"
+    return "email"
+
+
+def _looks_like_customer_lookup(normalized: str) -> bool:
+    tokens = set(normalized.split())
+    return bool(
+        {"who", "kim"} & tokens
+        or {"phone", "email", "contact", "channel", "musteri", "customer"} & tokens
+    )
+
+
+def _looks_like_order_lookup(normalized: str) -> bool:
+    tokens = set(normalized.split())
+    return bool(
+        {
+            "siparis",
+            "order",
+            "orders",
+            "nerede",
+            "where",
+            "gelir",
+            "arrive",
+            "eta",
+            "teslim",
+            "delivery",
+            "takip",
+            "tracking",
+            "delayed",
+            "packing",
+        }
+        & tokens
+        or _mentions_due_today(normalized)
+        or "gecik" in normalized
+    )
+
+
+def _mentions_today(normalized: str) -> bool:
+    tokens = set(normalized.split())
+    return bool({"today", "bugun"} & tokens)
+
+
+def _mentions_due_today(normalized: str) -> bool:
+    return (
+        _phrase_in_normalized_text(normalized, "due today")
+        or _phrase_in_normalized_text(normalized, "today orders")
+        or _phrase_in_normalized_text(normalized, "orders today")
+        or _phrase_in_normalized_text(normalized, "bugun")
+    )
+
+
+def _tracking_url(shipment: Shipment) -> str:
+    return f"https://tracking.cirak.local/{_slugify(shipment.carrier)}/{shipment.trackingCode}"
+
+
+def _slugify(value: str) -> str:
+    normalized = _normalize(value)
+    return re.sub(r"[^a-z0-9]+", "-", normalized).strip("-") or "carrier"
+
+
+def get_channel_display_name(channel: ContactDraftChannel) -> str:
+    labels: dict[ContactDraftChannel, str] = {
+        "whatsapp": "WhatsApp",
+        "telegram": "Telegram",
+        "email": "email",
+    }
+    return labels[channel]
 
 
 def _product_match_tokens(value: str) -> set[str]:

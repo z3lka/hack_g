@@ -1,11 +1,12 @@
 import { Copy, Mail, MessageCircle, Send, X } from "lucide-react";
-import { getDraftTargetKindLabel } from "../app/drafts";
+import { getDraftTargetKindLabel, getMockSendChannelLabel } from "../app/drafts";
 import type { DraftModal, MockSendChannel } from "../app/uiTypes";
 
 export function DraftDrawer({
   draft,
   notice,
   onClose,
+  onSubjectChange,
   onBodyChange,
   onMockSend,
   onCopy,
@@ -13,6 +14,7 @@ export function DraftDrawer({
   draft: DraftModal;
   notice: string;
   onClose: () => void;
+  onSubjectChange: (subject: string) => void;
   onBodyChange: (body: string) => void;
   onMockSend: (channel: MockSendChannel) => void;
   onCopy: () => void;
@@ -51,18 +53,40 @@ export function DraftDrawer({
             <span>E-posta</span>
             <strong>{draft.target.email}</strong>
           </div>
+          {draft.recommendedChannel && (
+            <div>
+              <span>Önerilen</span>
+              <strong>{getMockSendChannelLabel(draft.recommendedChannel)}</strong>
+            </div>
+          )}
         </div>
+        {draft.subject !== undefined && (
+          <label className="mock-field">
+            <span>Konu</span>
+            <input
+              value={draft.subject}
+              onChange={(event) => onSubjectChange(event.target.value)}
+              aria-label="E-posta konusu"
+            />
+          </label>
+        )}
         <textarea
           className="drawer-body drawer-body-input"
           value={draft.body}
           onChange={(event) => onBodyChange(event.target.value)}
           aria-label="Gönderilecek mesaj içeriği"
         />
+        {draft.reviewReason && (
+          <div className="draft-review-note">
+            <strong>{Math.round((draft.confidence ?? 0) * 100)}%</strong>
+            <span>{draft.reviewReason}</span>
+          </div>
+        )}
         <div
           className="mock-send-grid"
           aria-label="Mock gönderim kanalları">
           <button
-            className="drawer-send whatsapp"
+            className={`drawer-send whatsapp${draft.recommendedChannel === "whatsapp" ? " recommended" : ""}`}
             onClick={() => onMockSend("whatsapp")}
             type="button">
             <MessageCircle size={15} />
@@ -72,7 +96,7 @@ export function DraftDrawer({
             </span>
           </button>
           <button
-            className="drawer-send telegram"
+            className={`drawer-send telegram${draft.recommendedChannel === "telegram" ? " recommended" : ""}`}
             onClick={() => onMockSend("telegram")}
             type="button">
             <Send size={15} />
@@ -82,7 +106,7 @@ export function DraftDrawer({
             </span>
           </button>
           <button
-            className="drawer-send email"
+            className={`drawer-send email${draft.recommendedChannel === "email" ? " recommended" : ""}`}
             onClick={() => onMockSend("email")}
             type="button">
             <Mail size={15} />

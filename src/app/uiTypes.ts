@@ -6,7 +6,7 @@ export type ChatState = "closed" | "minimized" | "open";
 
 export type MockSendChannel = "whatsapp" | "telegram" | "email";
 
-export type FloatingMockChannel = Extract<MockSendChannel, "whatsapp" | "telegram">;
+export type FloatingMockChannel = MockSendChannel;
 
 export type DraftTargetKind = "customer" | "supplier" | "carrier" | "internal";
 
@@ -20,13 +20,18 @@ export type DraftTarget = {
 export type DraftModal = {
   title: string;
   subtitle: string;
+  subject?: string;
   body: string;
   target: DraftTarget;
+  recommendedChannel?: MockSendChannel;
+  confidence?: number;
+  reviewReason?: string;
 };
 
 export type MockComposerState = {
   channel: FloatingMockChannel;
   customerId: string;
+  subject: string;
   message: string;
   notice: string;
 };

@@ -37,7 +37,7 @@ from .models import (
 )
 
 app = FastAPI(
-    title="Orbio AI Ops API",
+    title="Çırak AI Ops API",
     description="FastAPI backend for the SME AI operations hackathon prototype.",
     version="0.1.0",
 )
@@ -107,7 +107,9 @@ def read_inbox_thread(thread_id: str) -> CustomerThread:
     return get_thread(thread_id)
 
 
-@app.post("/api/assistant/drafts/{draft_id}/approve", response_model=DraftApprovalResponse)
+@app.post(
+    "/api/assistant/drafts/{draft_id}/approve", response_model=DraftApprovalResponse
+)
 def approve_assistant_draft(
     draft_id: str,
     request: DraftApprovalRequest,
@@ -130,13 +132,16 @@ def chat(request: ChatRequest) -> ChatResponse:
         agentMessage=create_chat_message(result.response, "agent"),
         actions=result.actions,
         state=state,
+        contactDraft=result.contactDraft,
     )
 
 
 @app.post("/api/shipments/{order_id}/notify", response_model=StateActionResponse)
 def notify_customer(order_id: str) -> StateActionResponse:
     state = store.get_state()
-    shipment = next((item for item in state.shipments if item.orderId == order_id), None)
+    shipment = next(
+        (item for item in state.shipments if item.orderId == order_id), None
+    )
 
     if shipment is None:
         raise HTTPException(status_code=404, detail="Shipment not found")
@@ -155,7 +160,9 @@ def notify_customer(order_id: str) -> StateActionResponse:
 def create_restock_draft(product_id: str) -> StateActionResponse:
     state = store.get_state()
     product = next((item for item in state.products if item.id == product_id), None)
-    alert = next((item for item in state.inventoryAlerts if item.productId == product_id), None)
+    alert = next(
+        (item for item in state.inventoryAlerts if item.productId == product_id), None
+    )
 
     if product is None:
         raise HTTPException(status_code=404, detail="Product not found")

@@ -1,4 +1,4 @@
-import { Bot, ChevronDown, MessageCircle, Send, X } from "lucide-react";
+import { Bot, ChevronDown, Mail, MessageCircle, Send, X } from "lucide-react";
 import type { FormEventHandler, RefObject } from "react";
 import { getMockSendChannelLabel } from "../app/drafts";
 import { starterMessages } from "../app/constants";
@@ -20,6 +20,11 @@ const botChannels: ExternalBotChannel[] = [
     id: "whatsapp",
     label: "WhatsApp",
     icon: <MessageCircle size={17} />,
+  },
+  {
+    id: "email",
+    label: "E-posta",
+    icon: <Mail size={17} />,
   },
 ];
 
@@ -228,9 +233,15 @@ function MockChannelComposer({
   const icon =
     composer.channel === "whatsapp" ? (
       <MessageCircle size={16} />
+    ) : composer.channel === "email" ? (
+      <Mail size={16} />
     ) : (
       <Send size={16} />
     );
+  const destination =
+    composer.channel === "email"
+      ? (selectedCustomer?.email ?? "Mock e-posta yok")
+      : (selectedCustomer?.phone ?? "Mock telefon yok");
 
   return (
     <aside
@@ -271,9 +282,22 @@ function MockChannelComposer({
       </label>
 
       <div className="mock-recipient-line">
-        <span>Telefon</span>
-        <strong>{selectedCustomer?.phone ?? "Mock telefon yok"}</strong>
+        <span>{composer.channel === "email" ? "E-posta" : "Telefon"}</span>
+        <strong>{destination}</strong>
       </div>
+
+      {composer.channel === "email" && (
+        <label className="mock-field">
+          <span>Konu</span>
+          <input
+            value={composer.subject}
+            onChange={(event) =>
+              onChange({ subject: event.target.value, notice: "" })
+            }
+            aria-label="E-posta konusu"
+          />
+        </label>
+      )}
 
       <label className="mock-field">
         <span>Mesaj</span>

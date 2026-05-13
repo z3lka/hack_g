@@ -2262,6 +2262,10 @@ h3 {
   background: linear-gradient(135deg, #12B76A, #027A48);
 }
 
+.channel-fab.email {
+  background: linear-gradient(135deg, #475467, #101828);
+}
+
 .channel-fab.disabled {
   opacity: .45;
   box-shadow: var(--shadow-sm);
@@ -2327,6 +2331,10 @@ h3 {
   border-top: 4px solid var(--green);
 }
 
+.mock-channel-panel.email {
+  border-top: 4px solid var(--ink);
+}
+
 .mock-channel-header {
   display: flex;
   align-items: flex-start;
@@ -2356,6 +2364,10 @@ h3 {
 
 .mock-channel-panel.whatsapp .mock-channel-icon {
   background: var(--green);
+}
+
+.mock-channel-panel.email .mock-channel-icon {
+  background: var(--ink);
 }
 
 .mock-channel-header strong {
@@ -2396,6 +2408,7 @@ h3 {
   letter-spacing: .05em;
 }
 
+.mock-field input,
 .mock-field select,
 .mock-field textarea {
   width: 100%;
@@ -2406,6 +2419,11 @@ h3 {
   font: inherit;
   font-size: 13px;
   outline: none;
+}
+
+.mock-field input {
+  height: 38px;
+  padding: 0 10px;
 }
 
 .mock-field select {
@@ -2420,6 +2438,7 @@ h3 {
   line-height: 1.5;
 }
 
+.mock-field input:focus,
 .mock-field select:focus,
 .mock-field textarea:focus {
   border-color: var(--green);
@@ -2461,6 +2480,10 @@ h3 {
 
 .mock-channel-send.whatsapp {
   background: var(--green);
+}
+
+.mock-channel-send.email {
+  background: var(--ink);
 }
 
 /* Float panel */
@@ -2815,6 +2838,24 @@ h3 {
   box-shadow: 0 0 0 3px rgba(18, 183, 106, .12);
 }
 
+.draft-review-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--blue-bg);
+  border-radius: var(--radius);
+  background: var(--blue-bg);
+  color: var(--blue-text);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.draft-review-note strong {
+  flex-shrink: 0;
+  color: var(--blue-dark);
+}
+
 .drawer-target {
   display: grid;
   grid-template-columns: 1fr;
@@ -2873,6 +2914,10 @@ h3 {
 .drawer-send:hover {
   opacity: .9;
   transform: translateY(-1px);
+}
+
+.drawer-send.recommended {
+  box-shadow: 0 0 0 3px rgba(18, 183, 106, .18);
 }
 
 .drawer-send.whatsapp {

@@ -26,8 +26,10 @@ ActionType = Literal[
     "lookup_customer",
     "lookup_shipment",
     "create_customer_reply_draft",
+    "create_customer_update_draft",
     "approve_draft",
     "send_email",
+    "mock_send_message",
 ]
 InsightColor = Literal["red", "yellow", "orange", "green"]
 MemoryCategory = Literal["inventory", "customer", "supplier", "shipping", "product", "note"]
@@ -35,6 +37,7 @@ EmbeddingBackend = Literal["gemini", "sentence-transformers", "hash"]
 IssueCategory = Literal["inventory", "order", "payment", "integration", "shipping", "system"]
 IssueSeverity = Literal["info", "warning", "critical"]
 MessageIntent = Literal[
+    "customer_update_draft",
     "order_lookup",
     "stock_check",
     "shipment_risk",
@@ -47,6 +50,7 @@ MessageIntent = Literal[
     "general",
     "unknown",
 ]
+ContactDraftChannel = Literal["whatsapp", "telegram", "email"]
 DraftStatus = Literal["pending_review", "approved", "sent", "failed"]
 ConnectorStatus = Literal["ok", "degraded", "disabled", "error"]
 ConnectorType = Literal["commerce", "email_inbound", "email_outbound"]
@@ -155,11 +159,6 @@ class OperationsState(BaseModel):
     issues: list[OperationalIssue]
 
 
-class AgentResult(BaseModel):
-    response: str
-    actions: list[AgentAction]
-
-
 class MessageEntities(BaseModel):
     orderId: str | None = None
     productId: str | None = None
@@ -178,6 +177,26 @@ class AssistantInterpretation(BaseModel):
     requiredReviewReason: str | None = None
     memory: list[str] = Field(default_factory=list)
     actions: list[AgentAction] = Field(default_factory=list)
+
+
+class ContactDraft(BaseModel):
+    customerId: str
+    customerName: str
+    phone: str
+    email: str | None = None
+    recommendedChannel: ContactDraftChannel
+    subject: str
+    body: str
+    entities: MessageEntities = Field(default_factory=MessageEntities)
+    confidence: float
+    requiredReviewReason: str
+    trackingUrl: str | None = None
+
+
+class AgentResult(BaseModel):
+    response: str
+    actions: list[AgentAction]
+    contactDraft: ContactDraft | None = None
 
 
 class CustomerMessage(BaseModel):
@@ -262,6 +281,7 @@ class ChatResponse(BaseModel):
     agentMessage: ChatMessage
     actions: list[AgentAction]
     state: OperationsState
+    contactDraft: ContactDraft | None = None
 
 
 class StateActionResponse(BaseModel):
