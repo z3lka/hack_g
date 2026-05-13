@@ -1,35 +1,27 @@
 import {
-  ClipboardList,
-  Clock3,
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
-import type { MemoryStatus } from "../types";
 import { navIcon, navLabel, pageViews } from "../app/navigation";
 import type { PageView } from "../app/uiTypes";
+import type { MemoryStatus } from "../types";
 import compactAppIcon from "../../assets/new_icon.png";
 import expandedAppIcon from "../../assets/cirak.png";
 
 export function Sidebar({
   activePage,
   isCollapsed,
-  dueTodayCount,
   memoryStatus,
   llmMode,
-  isMutating,
   onNavigate,
   onToggleCollapsed,
-  onGeneratePlan,
 }: {
   activePage: PageView;
   isCollapsed: boolean;
-  dueTodayCount: number;
   memoryStatus: MemoryStatus | null;
   llmMode: "gemini" | "fallback";
-  isMutating: boolean;
   onNavigate: (page: PageView) => void;
   onToggleCollapsed: () => void;
-  onGeneratePlan: () => void;
 }) {
   return (
     <aside className="sidebar">
@@ -81,28 +73,6 @@ export function Sidebar({
       </nav>
 
       <div className="sidebar-footer">
-        <div
-          className="auto-run-card"
-          title={`Günlük Plan: ${dueTodayCount} sipariş bugün teslim`}>
-          <div className="auto-run-header">
-            <Clock3 size={15} />
-            <span className="sidebar-label">Günlük Plan</span>
-          </div>
-          <p className="auto-run-count sidebar-label">
-            {dueTodayCount} sipariş bugün teslim
-          </p>
-          <button
-            className="btn-outline-green"
-            onClick={onGeneratePlan}
-            disabled={isMutating}
-            type="button"
-            aria-label="Görev Planı Oluştur"
-            title="Görev Planı Oluştur">
-            <ClipboardList size={14} />
-            <span className="sidebar-label">Görev Planı Oluştur</span>
-          </button>
-        </div>
-
         <div
           className="memory-badge"
           title={`Hafıza: ${

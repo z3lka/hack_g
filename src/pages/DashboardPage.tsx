@@ -31,7 +31,7 @@ export function DashboardPage({
   onInsightAction,
   onCompleteTask,
   onResolveInventoryAlert,
-  onNotifyShipment,
+  onOpenShipmentDraft,
 }: {
   state: OperationsState;
   actionableInsights: ProactiveInsight[];
@@ -42,7 +42,7 @@ export function DashboardPage({
   onInsightAction: (insight: ProactiveInsight) => void;
   onCompleteTask: (taskId: string) => void;
   onResolveInventoryAlert: (alert: InventoryAlert) => void;
-  onNotifyShipment: (orderId: string) => void;
+  onOpenShipmentDraft: (orderId: string) => void;
 }) {
   const activeAlerts = state.inventoryAlerts.filter((alert) => !alert.resolved);
   const criticalAlerts = activeAlerts.filter(
@@ -302,7 +302,7 @@ export function DashboardPage({
                   </div>
                   <button
                     className="btn-notify"
-                    onClick={() => onNotifyShipment(shipment.orderId)}
+                    onClick={() => onOpenShipmentDraft(shipment.orderId)}
                     disabled={isMutating}
                     type="button">
                     <UserRoundCheck size={14} /> Bildir

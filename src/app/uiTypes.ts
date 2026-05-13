@@ -26,6 +26,7 @@ export type DraftModal = {
   recommendedChannel?: MockSendChannel;
   confidence?: number;
   reviewReason?: string;
+  shipmentOrderId?: string;
 };
 
 export type MockComposerState = {

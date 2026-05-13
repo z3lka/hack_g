@@ -24,8 +24,9 @@ import {
   getMockSendChannelLabel,
   getSupplierDraftTarget,
 } from "./drafts";
-import { formatTodayLabel, getErrorMessage } from "./format";
+import { formatTodayLabel, getErrorMessage, summarizeItems } from "./format";
 import { isActionableInsight } from "./insights";
+import { labelStatus } from "./labels";
 import { buildNotificationItems } from "./notifications";
 import { buildGlobalSearchResults } from "./search";
 import type {
@@ -416,6 +417,52 @@ export function useOperationsController() {
     });
   }
 
+  function openShipmentDraft(orderId: string) {
+    const order = currentState.orders.find((item) => item.id === orderId);
+    const shipment = currentState.shipments.find((item) => item.orderId === orderId);
+    const customer = order
+      ? currentState.customers.find((item) => item.id === order.customerId)
+      : null;
+
+    if (!order || !shipment || !customer) {
+      return;
+    }
+
+    const recommendedChannel = getRecommendedChannel(customer.channel);
+
+    setDraftNotice("");
+    setDraftModal({
+      title: `Müşteri Güncellemesi: ${customer.name}`,
+      subtitle: `Önerilen kanal: ${getMockSendChannelLabel(recommendedChannel)}`,
+      subject: `Sipariş #${order.id} kargo güncellemesi`,
+      body: [
+        `Merhaba ${customer.name},`,
+        "",
+        `Sipariş #${order.id} için kısa bir kargo güncellemesi paylaşmak istedik.`,
+        `Güncel durum: ${labelStatus(order.status)}.`,
+        `Kargo firması: ${shipment.carrier}.`,
+        `Son kargo durumu: ${shipment.lastScan}.`,
+        `Tahmini teslim: ${shipment.eta}.`,
+        `Sipariş içeriği: ${summarizeItems(order, currentState)}.`,
+        "",
+        "Yeni kargo hareketi oluştuğunda tekrar bilgilendireceğiz.",
+        "",
+        "Sevgiler,",
+        "Çırak",
+      ].join("\n"),
+      target: {
+        name: customer.name,
+        kind: "customer",
+        phone: customer.phone,
+        email: customer.email ?? "E-posta yok",
+      },
+      recommendedChannel,
+      confidence: shipment.risk === "delayed" ? 0.86 : 0.82,
+      reviewReason: "Owner review is required before any customer message is sent.",
+      shipmentOrderId: order.id,
+    });
+  }
+
   async function resolveInventoryAlert(alert: InventoryAlert) {
     await runMutation(async () => {
       const response = await createRestockDraft(alert.productId);
@@ -593,6 +640,10 @@ export function useOperationsController() {
         },
       },
     ]);
+
+    if (draftModal.shipmentOrderId) {
+      void markShipmentNotified(draftModal.shipmentOrderId);
+    }
   }
 
   function openMockComposer(channel: FloatingMockChannel) {
@@ -707,6 +758,7 @@ export function useOperationsController() {
     approveInboxDraft,
     handleMemoryIngest,
     markShipmentNotified,
+    openShipmentDraft,
     resolveInventoryAlert,
     draftProduct,
     handleGeneratePlan,
@@ -742,4 +794,14 @@ function createLocalChatMessage(
 
 function delay(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function getRecommendedChannel(
+  channel: "WhatsApp" | "Email" | "Phone",
+): MockSendChannel {
+  if (channel === "Email") {
+    return "email";
+  }
+
+  return "whatsapp";
 }

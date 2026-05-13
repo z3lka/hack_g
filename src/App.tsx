@@ -29,13 +29,10 @@ export default function App() {
       <Sidebar
         activePage={app.activePage}
         isCollapsed={app.isSidebarCollapsed}
-        dueTodayCount={app.dueToday.length}
         memoryStatus={app.memoryStatus}
         llmMode={app.llmMode}
-        isMutating={app.isMutating}
         onNavigate={app.navigate}
         onToggleCollapsed={app.toggleSidebar}
-        onGeneratePlan={app.handleGeneratePlan}
       />
 
       <div className="workspace">
@@ -74,7 +71,7 @@ export default function App() {
             onInsightAction={app.handleInsightAction}
             onCompleteTask={app.completeTask}
             onResolveInventoryAlert={app.resolveInventoryAlert}
-            onNotifyShipment={app.markShipmentNotified}
+            onOpenShipmentDraft={app.openShipmentDraft}
           />
         )}
 
