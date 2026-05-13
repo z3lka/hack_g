@@ -23,7 +23,10 @@ class GeminiClient:
         return bool(self.api_key)
 
     def generate_json(
-        self, prompt: str, response_schema: dict | None = None
+        self,
+        prompt: str,
+        response_schema: dict | None = None,
+        system_instruction: str | None = None,
     ) -> dict | None:
         if not self.api_key:
             self.last_error = "GEMINI_API_KEY is not set."
@@ -35,8 +38,9 @@ class GeminiClient:
 
             client = genai.Client(api_key=self.api_key)
             config = types.GenerateContentConfig(
-                responseMimeType="application/json",
-                responseSchema=response_schema,
+                response_mime_type="application/json",
+                response_schema=response_schema,
+                system_instruction=system_instruction,
             )
             response = client.models.generate_content(
                 model=self.model,
@@ -49,16 +53,28 @@ class GeminiClient:
             self.last_error = str(exc)
             return None
 
-    def generate_text(self, prompt: str) -> str | None:
+    def generate_text(
+        self,
+        prompt: str,
+        system_instruction: str | None = None,
+    ) -> str | None:
         if not self.api_key:
             self.last_error = "GEMINI_API_KEY is not set."
             return None
 
         try:
             from google import genai
+            from google.genai import types
 
             client = genai.Client(api_key=self.api_key)
-            response = client.models.generate_content(model=self.model, contents=prompt)
+            config = types.GenerateContentConfig(
+                system_instruction=system_instruction,
+            )
+            response = client.models.generate_content(
+                model=self.model,
+                contents=prompt,
+                config=config,
+            )
             return getattr(response, "text", None)
         except Exception as exc:
             self.last_error = str(exc)

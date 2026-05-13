@@ -171,6 +171,35 @@ class EmailAssistantTests(unittest.TestCase):
         )
         self.assertNotIn("check_stock", {action.type for action in response.actions})
 
+    def test_direct_customer_update_uses_requested_message_content(self) -> None:
+        response = chat(
+            ChatRequest(
+                message=(
+                    "deniz ergin'e WhatsApp uzerinden daha once ozel olarak "
+                    "sipariş ettigi 50 adet organik sabun setinin geldigini "
+                    "söyleyen bir mesaj iletir misin"
+                )
+            )
+        )
+
+        draft = response.contactDraft
+        self.assertIsNotNone(draft)
+        assert draft is not None
+        self.assertEqual(draft.customerId, "c-9")
+        self.assertEqual(draft.customerName, "Deniz Ergin")
+        self.assertEqual(draft.recommendedChannel, "whatsapp")
+        self.assertIsNone(draft.entities.orderId)
+        self.assertEqual(draft.entities.productId, "p-109")
+        self.assertIn("Merhaba Deniz,", draft.body)
+        self.assertIn(
+            "Daha önce özel olarak sipariş ettiğiniz 50 adet Organik Sabun Seti geldi.",
+            draft.body,
+        )
+        self.assertIn("Teslimat için nasıl ilerlememizi istersiniz?", draft.body)
+        self.assertNotIn("Sipariş #137", draft.body)
+        self.assertNotIn("packing", draft.body)
+        self.assertNotIn("Seramik Sunum Tabağı", draft.body)
+
     def test_customer_update_missing_order_returns_no_draft(self) -> None:
         response = chat(
             ChatRequest(
