@@ -1,3 +1,5 @@
+![Main Page](./assets/cirak_main_page.png)
+
 # çırak AI Ops
 
 Working website prototype for a hackathon challenge focused on AI-supported operations for SMEs and cooperatives. The app uses a React frontend with a FastAPI/Python backend, plus a local business-memory layer powered by ChromaDB and Gemini-ready RAG.
@@ -29,8 +31,6 @@ Suggested 3-minute demo:
 - Resettable demo state so hackathon runs can be replayed cleanly.
 
 ## Screenshots
-
-![çırak dashboard](assets/cirak_main_page.png)
 
 ![çırak assistant and messages](assets/cirak_message.png)
 
@@ -124,7 +124,6 @@ export COMMERCE_API_TOKEN="..."
 The Telegram and WhatsApp floating buttons are local mock composers. They do not
 redirect to external apps or require bot credentials. Email drafts require human
 approval before SMTP is called.
-
 
 Start the frontend in a second terminal:
 
